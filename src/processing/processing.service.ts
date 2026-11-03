@@ -94,13 +94,24 @@ export class ProcessingService implements OnModuleInit {
       patientId: event.patientId,
       attempt: event.attempts,
     };
-    const start = performance.now();
     // A failed write leaves the event in processing until its lease expires; the reaper counts it as an attempt.
     const writeFailed = (err: unknown) => {
       wideEvent.writeError = errorMessage(err);
       return 'write_failed';
     };
     try {
+      let reprocessed: number;
+      try {
+        reprocessed = await this.resetLater(event);
+      } catch (err) {
+        wideEvent.outcome = writeFailed(err);
+        return;
+      }
+      if (reprocessed > 0) {
+        wideEvent.late = true;
+        wideEvent.reprocessed = reprocessed;
+      }
+      const start = performance.now();
       let result: Record<string, unknown>;
       try {
         result = await this.callExternal(event);
@@ -123,6 +134,26 @@ export class ProcessingService implements OnModuleInit {
     } finally {
       this.logger.log(wideEvent);
     }
+  }
+
+  // Option C: a result depends on the events before it, so a late event sends the later done ones back
+  // to the queue and the head claim redoes them in ts order. Cost: extra external calls.
+  // Safe without a transaction: we hold the patient's lock, and if a crash cuts the updateMany short,
+  // the late event's next claim runs it again and resets the rest.
+  private async resetLater(event: ClaimedEvent): Promise<number> {
+    const { modifiedCount } = await this.events.updateMany(
+      // Only done goes back: pending is already queued, and failed waits for an operator.
+      { patientId: event.patientId, status: 'done', ts: { $gt: event.ts } },
+      {
+        // attempts restart at 0: a reprocess is a new run and gets its full retries,
+        // not the ones its earlier successful run already spent.
+        $set: { status: 'pending', availableAt: new Date(), attempts: 0 },
+        // A1: each reprocess calls the external API with a new key (dedupKey:reprocessCount);
+        // in our Mongo the event stays 1 document.
+        $inc: { reprocessCount: 1 },
+      },
+    );
+    return modifiedCount;
   }
 
   private callExternal(event: ClaimedEvent): Promise<Record<string, unknown>> {
