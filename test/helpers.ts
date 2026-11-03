@@ -30,7 +30,7 @@ export async function createWorker({
   env = {},
   external,
 }: WorkerOptions = {}): Promise<TestingModule> {
-  const saved = Object.keys(env).map((key) => [key, process.env[key]]);
+  const saved = Object.keys(env).map((key) => [key, process.env[key]] as const);
   Object.assign(process.env, env);
   try {
     let builder = Test.createTestingModule({ imports: [WorkerModule] });
