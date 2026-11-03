@@ -23,11 +23,9 @@ export class ExternalProcessorService {
   async process(
     event: ExternalInput,
     idempotencyKey: string,
+    signal: AbortSignal,
   ): Promise<Record<string, unknown>> {
-    // The timeout stays below the lease (checked at boot); otherwise 2 workers process the same event.
-    await setTimeout(this.config.processingDelayMs, undefined, {
-      signal: AbortSignal.timeout(this.config.externalTimeoutMs),
-    });
+    await setTimeout(this.config.processingDelayMs, undefined, { signal });
     return { type: event.type, idempotencyKey };
   }
 }

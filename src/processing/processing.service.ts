@@ -92,10 +92,7 @@ export class ProcessingService implements OnModuleInit {
     };
     const start = performance.now();
     try {
-      const result = await this.external.process(
-        event,
-        `${event.dedupKey}:${event.reprocessCount}`,
-      );
+      const result = await this.callExternal(event);
       wideEvent.externalMs = Math.round(performance.now() - start);
       wideEvent.outcome = (await this.complete(event, result))
         ? 'done'
@@ -110,6 +107,22 @@ export class ProcessingService implements OnModuleInit {
     } finally {
       this.logger.log(wideEvent);
     }
+  }
+
+  private callExternal(event: ClaimedEvent): Promise<Record<string, unknown>> {
+    // The timeout stays below the lease (checked at boot); otherwise 2 workers process the same event.
+    const signal = AbortSignal.timeout(this.config.externalTimeoutMs);
+    return Promise.race([
+      this.external.process(
+        event,
+        `${event.dedupKey}:${event.reprocessCount}`,
+        signal,
+      ),
+      // Also ends a call that ignores the signal, so a hung API never holds the event past the timeout.
+      new Promise<never>((_, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason as Error)),
+      ),
+    ]);
   }
 
   // Filtered by leaseOwner: a worker that lost its lease never overwrites another worker's result.
