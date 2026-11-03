@@ -1,0 +1,18 @@
+# compiled output
+/dist
+/node_modules
+/coverage
+
+# env
+.env
+
+# logs
+*.log
+
+# OS / IDE
+.DS_Store
+.idea
+.vscode
+
+# assignment brief and plans, not part of the delivery
+tmp/
