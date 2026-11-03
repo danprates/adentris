@@ -261,6 +261,50 @@ describe('Failure handling (e2e)', () => {
     expect(doc?.attempts).toBe(2);
   });
 
+  it('refuses the write of a stale handle after the same worker claims the event again', async () => {
+    const logs = captureLogs();
+    try {
+      const releases: (() => void)[] = [];
+      const external = {
+        async process() {
+          const call = releases.length + 1;
+          await new Promise<void>((resolve) => releases.push(resolve));
+          return { call };
+        },
+      };
+      const id = await insert();
+      const worker = await startWorker({ external, env: FAST });
+      await waitFor(() => releases.length === 1);
+
+      // The lease runs out early (a stall); the reaper frees the event and this same worker claims it again.
+      await events().updateOne(
+        { _id: id },
+        { $set: { leaseUntil: new Date(Date.now() - 1000) } },
+      );
+      await waitFor(() => releases.length === 2);
+      releases[0]();
+      await waitFor(() => logs.wideEvents().length === 1);
+
+      const during = await find('E1');
+      expect(during?.status).toBe('processing');
+      expect(during?.attempts).toBe(2);
+      expect(during?.result).toBeUndefined();
+
+      releases[1]();
+      await waitFor(() => statusIs('E1', 'done'));
+      await closeWorker(worker);
+
+      expect((await find('E1'))?.result).toEqual({ call: 2 });
+      const lines = logs.wideEvents<Record<string, unknown>>();
+      expect(lines.map((l) => [l.attempt, l.outcome])).toEqual([
+        [1, 'lease_lost'],
+        [2, 'done'],
+      ]);
+    } finally {
+      logs.restore();
+    }
+  });
+
   it('3.9 survives Mongo stalling for 3s and finishes the pending events', async () => {
     const external = flakyExternal(() => false, 200);
     for (let i = 0; i < 6; i++) {

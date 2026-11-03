@@ -128,13 +128,23 @@ export class ProcessingService implements OnModuleInit {
     ]);
   }
 
-  // Filtered by leaseOwner: a worker that lost its lease never overwrites another worker's result.
+  // The lease is this claim's: leaseOwner names the process and attempts (bumped on every claim) the claim,
+  // so a stale handle never overwrites a later claim of the same event, even by this same worker.
+  private ownLease(event: ClaimedEvent) {
+    return {
+      _id: event._id,
+      status: 'processing',
+      leaseOwner: this.workerId,
+      attempts: event.attempts,
+    };
+  }
+
   private async complete(
     event: ClaimedEvent,
     result: Record<string, unknown>,
   ): Promise<boolean> {
     const { modifiedCount } = await this.events.updateOne(
-      { _id: event._id, status: 'processing', leaseOwner: this.workerId },
+      this.ownLease(event),
       {
         $set: { status: 'done', result, processedAt: new Date() },
         $unset: { leaseOwner: 1, leaseUntil: 1, error: 1 },
@@ -152,7 +162,7 @@ export class ProcessingService implements OnModuleInit {
     // Trade-off: later events are processed on a state that lacks this event.
     const outcome = isExhausted(event.attempts) ? 'failed' : 'retry';
     const { modifiedCount } = await this.events.updateOne(
-      { _id: event._id, status: 'processing', leaseOwner: this.workerId },
+      this.ownLease(event),
       {
         $set:
           outcome === 'failed'
