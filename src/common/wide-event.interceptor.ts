@@ -10,11 +10,10 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Observable, catchError, tap, throwError } from 'rxjs';
 
-interface HandlerResult {
-  id?: string;
-  duplicate?: boolean;
-  dedupKey?: string;
-}
+// Handlers add their own fields here; the response body stays the API contract, not a log feed.
+export type WideEventRequest = FastifyRequest & {
+  wideEvent?: Record<string, unknown>;
+};
 
 // One JSON log line per request, emitted at the end with all its context.
 // shortcut: requests Fastify rejects before Nest routing (malformed JSON 400, >64KB 413, 404) get no line;
@@ -25,7 +24,7 @@ export class WideEventInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const http = context.switchToHttp();
-    const req = http.getRequest<FastifyRequest>();
+    const req = http.getRequest<WideEventRequest>();
     const reply = http.getResponse<FastifyReply>();
     const start = performance.now();
     const body = req.body as { patientId?: unknown } | undefined;
@@ -37,14 +36,12 @@ export class WideEventInterceptor implements NestInterceptor {
     const durationMs = () => Math.round(performance.now() - start);
 
     return next.handle().pipe(
-      tap((result: HandlerResult | undefined) =>
+      tap(() =>
         this.logger.log({
           ...base,
+          ...req.wideEvent,
           status: reply.statusCode,
           durationMs: durationMs(),
-          eventId: result?.id,
-          dedupKey: result?.dedupKey,
-          duplicate: result?.duplicate,
         }),
       ),
       catchError((err: unknown) => {

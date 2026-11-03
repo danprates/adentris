@@ -13,8 +13,6 @@ import {
 interface ResponseBody {
   id: string;
   status: string;
-  duplicate: boolean;
-  dedupKey: string;
   message: string | string[];
 }
 const bodyOf = (res: Response) => res.body as ResponseBody;
@@ -50,18 +48,14 @@ describe('POST /events (e2e)', () => {
   it('1.1 accepts a new event and stores it as pending', async () => {
     const res = await post(validEvent()).expect(202);
 
-    const { id, status, duplicate, dedupKey } = bodyOf(res);
-    expect({ status, duplicate }).toEqual({
-      status: 'pending',
-      duplicate: false,
-    });
+    const { id, ...rest } = bodyOf(res);
+    expect(rest).toEqual({ status: 'pending' });
     const doc = await eventsCollection(app).findOne({
       _id: new Types.ObjectId(id),
     });
     expect(doc?.status).toBe('pending');
     expect(doc?.attempts).toBe(0);
     expect(doc?.dedupKey).toMatch(/^[0-9a-f]{64}$/);
-    expect(doc?.dedupKey).toBe(dedupKey);
     expect(doc?.receivedAt).toBeInstanceOf(Date);
     expect(await count()).toBe(1);
   });
@@ -71,7 +65,7 @@ describe('POST /events (e2e)', () => {
 
     const second = await post(validEvent()).expect(200);
 
-    expect(bodyOf(second)).toEqual({ ...bodyOf(first), duplicate: true });
+    expect(bodyOf(second)).toEqual({ id: bodyOf(first).id, status: 'pending' });
     expect(await count()).toBe(1);
   });
 
@@ -168,6 +162,7 @@ describe('POST /events (e2e)', () => {
 
       const res = await post(validEvent()).expect(202);
 
+      const doc = await eventsCollection(app).findOne();
       const lines = logs.wideEvents();
       expect(lines).toHaveLength(1);
       const { durationMs, ...rest } = lines[0];
@@ -178,7 +173,7 @@ describe('POST /events (e2e)', () => {
         status: 202,
         patientId: 'p-1',
         eventId: bodyOf(res).id,
-        dedupKey: bodyOf(res).dedupKey,
+        dedupKey: doc?.dedupKey as string,
         duplicate: false,
       });
     });
