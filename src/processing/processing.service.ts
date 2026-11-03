@@ -42,12 +42,18 @@ export class ProcessingService implements OnModuleInit {
     const patients = [...new Set(ready.map((e) => e.patientId))];
 
     for (const patientId of patients) {
-      // Only the patient's head is claimed; later events wait, even while the head waits for a retry.
+      // Only the patient's head (lowest ts among pending and processing) is claimed; later events wait,
+      // even while the head runs or waits for a retry, so a head released mid-claim never gets overtaken.
       const head = await this.events
-        .findOne({ patientId, status: 'pending' }, { availableAt: 1 })
+        .findOne(
+          { patientId, status: { $in: ['pending', 'processing'] } },
+          { status: 1, availableAt: 1 },
+        )
         .sort({ ts: 1, _id: 1 })
         .lean();
-      if (!head || head.availableAt > now) continue;
+      if (!head || head.status !== 'pending' || head.availableAt > now) {
+        continue;
+      }
       try {
         const claimed = await this.events
           .findOneAndUpdate(

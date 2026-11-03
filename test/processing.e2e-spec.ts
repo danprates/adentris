@@ -297,6 +297,41 @@ describe('Event processing (e2e)', () => {
     expect(after?.status).toBe('done');
   });
 
+  it('keeps a later event waiting while the head fails and is released', async () => {
+    const order: string[] = [];
+    let failures = 3;
+    const external = {
+      async process(event: ExternalInput) {
+        const name = String(event.data.name);
+        order.push(name);
+        // The failure lands while the loop is between its head lookup and its claim (delayed below).
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        if (name === 'H1' && failures-- > 0) throw new Error('external down');
+        return {};
+      },
+    };
+    const worker = await startWorker({ external });
+    // Widens the race window: every claim write waits 50ms after the head lookup.
+    const workerModel = worker.get<Model<Event>>(getModelToken(Event.name));
+    const findOneAndUpdate = workerModel.findOneAndUpdate.bind(workerModel);
+    jest.spyOn(workerModel, 'findOneAndUpdate').mockImplementation(((
+      ...args: Parameters<typeof findOneAndUpdate>
+    ) => ({
+      lean: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return findOneAndUpdate(...args).lean();
+      },
+    })) as unknown as typeof findOneAndUpdate);
+
+    await seed([
+      { patientId: 'p-1', ts: '2026-11-03T08:00:00Z', data: { name: 'H1' } },
+      { patientId: 'p-1', ts: '2026-11-03T08:01:00Z', data: { name: 'H2' } },
+    ]);
+    await waitFor(() => allDone(2));
+
+    expect(order).toEqual(['H1', 'H1', 'H1', 'H1', 'H2']);
+  });
+
   it('2.11 logs one wide event per processed event', async () => {
     const logs = captureLogs();
     try {
