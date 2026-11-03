@@ -15,9 +15,9 @@ export const options = {
     ingest: {
       // Fixed arrival rate: a slow response does not slow the sender down, like real traffic.
       executor: 'constant-arrival-rate',
-      rate: 167, // 10k events/min
+      rate: Number(__ENV.RATE || 167), // 167/s = 10k events/min
       timeUnit: '1s',
-      duration: '10m',
+      duration: __ENV.DURATION || '10m',
       preAllocatedVUs: 50,
       maxVUs: 300,
     },
@@ -52,6 +52,10 @@ export default function () {
   const res = http.post(`${API_URL}/events`, body, {
     headers: { 'Content-Type': 'application/json' },
   });
-  if (res.status === 202) acceptedNew.add(1);
+  if (res.status === 202) {
+    acceptedNew.add(1);
+    // One id per line in load/accepted.log (--console-output): verify checks each one is stored.
+    console.log(res.json('id'));
+  }
   if (res.status === 200) duplicates.add(1);
 }

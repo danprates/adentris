@@ -19,3 +19,4 @@ tmp/
 
 # load test output
 load/summary.json
+load/accepted.log

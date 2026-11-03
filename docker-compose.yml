@@ -36,5 +36,18 @@ services:
       mongo:
         condition: service_healthy
 
+  # Load generator, only for npm run load; on the compose network, so it reaches the api by name.
+  k6:
+    image: grafana/k6:1.3.0
+    profiles: [load]
+    volumes:
+      - ./load:/load
+    environment:
+      - DURATION
+      - RATE
+    command: >-
+      run --summary-export /load/summary.json --log-format raw
+      --console-output /load/accepted.log /load/load.js
+
 volumes:
   mongo-data:
