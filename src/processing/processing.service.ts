@@ -38,8 +38,20 @@ export class ProcessingService implements OnModuleInit {
   // Claims the head (lowest ts, then _id) of one patient with ready work; null when none is free.
   async claim(): Promise<ClaimedEvent | null> {
     const now = new Date();
+    // Events queued behind a busy patient are the oldest ready ones and would fill the batch, so each claim
+    // walked dozens of busy heads (load test: ~100 claims/s for 167/s). Cost: 1 more query per claim.
+    const busy = await this.events.distinct('patientId', {
+      status: 'processing',
+    });
     const ready = await this.events
-      .find({ status: 'pending', availableAt: { $lte: now } }, { patientId: 1 })
+      .find(
+        {
+          status: 'pending',
+          availableAt: { $lte: now },
+          patientId: { $nin: busy },
+        },
+        { patientId: 1 },
+      )
       .sort({ availableAt: 1 })
       .limit(CLAIM_BATCH)
       .lean();

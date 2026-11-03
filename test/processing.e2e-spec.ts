@@ -238,6 +238,27 @@ describe('Event processing (e2e)', () => {
     });
   });
 
+  it('claims a free patient queued behind 100 events of a busy patient', async () => {
+    const busy = Array.from({ length: 101 }, (_, i) => ({
+      patientId: 'p-1',
+      ts: new Date(Date.UTC(2026, 10, 3, 8, 0, i)).toISOString(),
+    }));
+    const [head] = await seed([
+      ...busy,
+      { patientId: 'p-2', ts: '2026-11-03T09:00:00Z' },
+    ]);
+    // p-1 is busy in another worker, without a lease this worker could reap.
+    await events().updateOne(
+      { _id: head._id },
+      { $set: { status: 'processing' } },
+    );
+    const spy = new ExternalSpy();
+    await startWorker({ external: spy });
+
+    await waitFor(() => spy.calls.some((c) => c.patientId === 'p-2'));
+    expect(spy.calls.every((c) => c.patientId === 'p-2')).toBe(true);
+  });
+
   it('2.8 does not complete an event whose lease moved to another worker', async () => {
     const spy = new ExternalSpy();
     let release!: () => void;
