@@ -32,10 +32,10 @@ async function snapshot(events: Events): Promise<Snapshot> {
     failed: 0,
     oldestPendingAgeS: 0,
   };
-  const counts = events.aggregate<{ _id: EventDoc['status']; n: number }>([
-    { $group: { _id: '$status', n: { $sum: 1 } } },
-  ]);
-  for await (const { _id, n } of counts) s[_id] = n;
+  // One indexed count per status: a $group would scan the whole collection every 5s, under load.
+  for (const status of ['pending', 'processing', 'done', 'failed'] as const) {
+    s[status] = await events.countDocuments({ status });
+  }
   // availableAt is when the event became ready (insert, retry or reprocess): this is its wait in the queue.
   const oldest = await events.findOne(
     { status: 'pending' },
@@ -67,9 +67,14 @@ async function final(events: Events): Promise<boolean> {
   print(s);
 
   const summary = JSON.parse(readFileSync(SUMMARY, 'utf8')) as {
-    metrics: { accepted_new?: { count: number } };
+    metrics: {
+      accepted_new?: { count: number };
+      http_req_failed: { passes: number };
+    };
   };
   const acceptedNew = summary.metrics.accepted_new?.count ?? 0;
+  // A failed request (503 after the 2s timeout) may still have stored its event; the sender would retry.
+  const failedRequests = summary.metrics.http_req_failed.passes;
   const total = await events.countDocuments();
 
   for await (const f of events.find({ status: 'failed' })) {
@@ -118,13 +123,16 @@ async function final(events: Events): Promise<boolean> {
     .toArray();
 
   const checks = {
-    lost: acceptedNew - total,
+    lost: Math.max(0, acceptedNew - total),
+    // More documents than 202s plus failed requests would mean an event stored twice or out of nowhere.
+    unexplained: Math.max(0, total - acceptedNew - failedRequests),
     pending: s.pending + s.processing,
     duplicateKeys: dup?.keys ?? 0,
     outOfOrder,
   };
   const report = {
     acceptedNew,
+    failedRequests,
     total,
     done: s.done,
     failed: s.failed,
