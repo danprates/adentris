@@ -73,6 +73,7 @@ export class EventsService implements OnModuleInit {
         throw err;
       }
     }
+    // A resent failed event stays failed and is not queued again; operations requeue it on purpose.
     const original = await this.events
       .findOne(
         { dedupKey: key },

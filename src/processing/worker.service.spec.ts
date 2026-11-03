@@ -27,6 +27,7 @@ describe('WorkerService', () => {
         leaseMs: 30_000,
         externalTimeoutMs: 10_000,
         processingDelayMs: 5_000,
+        retryBaseMs: 1_000,
       },
     );
     worker.onApplicationBootstrap();

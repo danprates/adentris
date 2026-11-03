@@ -45,6 +45,10 @@ export class Event {
   @Prop()
   leaseUntil?: Date;
 
+  // Last external error; kept on failed, cleared on done.
+  @Prop()
+  error?: string;
+
   @Prop({ type: SchemaTypes.Mixed })
   result?: Record<string, unknown>;
 

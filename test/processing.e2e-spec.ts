@@ -310,7 +310,8 @@ describe('Event processing (e2e)', () => {
         return {};
       },
     };
-    const worker = await startWorker({ external });
+    // Short backoff: the test is about order, not about the wait.
+    const worker = await startWorker({ external, env: { RETRY_BASE_MS: '1' } });
     // Widens the race window: every claim write waits 50ms after the head lookup.
     const workerModel = worker.get<Model<Event>>(getModelToken(Event.name));
     const findOneAndUpdate = workerModel.findOneAndUpdate.bind(workerModel);

@@ -6,6 +6,7 @@ import { Model, mongo, Types } from 'mongoose';
 import { Event } from '../events/schemas/event.schema';
 import { ExternalProcessorService } from './external-processor.service';
 import { processingConfig } from './processing.config';
+import { isExhausted, nextAttemptAt } from './retry-policy';
 
 export type ClaimedEvent = Event & { _id: Types.ObjectId };
 
@@ -99,10 +100,12 @@ export class ProcessingService implements OnModuleInit {
         : 'lease_lost';
     } catch (err) {
       wideEvent.externalMs ??= Math.round(performance.now() - start);
-      wideEvent.error = err instanceof Error ? err.message : String(err);
-      wideEvent.outcome = await this.release(event).then(
-        (released) => (released ? 'released' : 'lease_lost'),
-        () => 'release_failed',
+      const error = err instanceof Error ? err.message : String(err);
+      wideEvent.error = error;
+      wideEvent.outcome = await this.fail(event, error).then(
+        (outcome) => outcome ?? 'lease_lost',
+        // The event stays in processing until its lease expires; the reaper counts it as an attempt.
+        () => 'write_failed',
       );
     } finally {
       this.logger.log(wideEvent);
@@ -134,23 +137,37 @@ export class ProcessingService implements OnModuleInit {
       { _id: event._id, status: 'processing', leaseOwner: this.workerId },
       {
         $set: { status: 'done', result, processedAt: new Date() },
-        $unset: { leaseOwner: 1, leaseUntil: 1 },
+        $unset: { leaseOwner: 1, leaseUntil: 1, error: 1 },
       },
     );
     return modifiedCount === 1;
   }
 
-  // shortcut: an error puts the event straight back to pending with no backoff, so a failing API is retried
-  // at once and forever; phase 3 replaces this with backoff and a 5-attempt limit.
-  // If this write fails too, the event stays in processing until its lease expires (the phase 3 reaper).
-  private async release(event: ClaimedEvent): Promise<boolean> {
+  // Schedules the next attempt, or gives up after the last one; null when the lease was lost.
+  private async fail(
+    event: ClaimedEvent,
+    error: string,
+  ): Promise<'retry' | 'failed' | null> {
+    // failed does not block the patient: holding them forever for 1 bad event is worse.
+    // Trade-off: later events are processed on a state that lacks this event.
+    const outcome = isExhausted(event.attempts) ? 'failed' : 'retry';
     const { modifiedCount } = await this.events.updateOne(
       { _id: event._id, status: 'processing', leaseOwner: this.workerId },
       {
-        $set: { status: 'pending' },
+        $set:
+          outcome === 'failed'
+            ? { status: 'failed', error }
+            : {
+                status: 'pending',
+                error,
+                availableAt: nextAttemptAt(
+                  event.attempts,
+                  this.config.retryBaseMs,
+                ),
+              },
         $unset: { leaseOwner: 1, leaseUntil: 1 },
       },
     );
-    return modifiedCount === 1;
+    return modifiedCount === 1 ? outcome : null;
   }
 }

@@ -22,6 +22,7 @@ describe('processingConfig', () => {
       'LEASE_MS',
       'EXTERNAL_TIMEOUT_MS',
       'PROCESSING_DELAY_MS',
+      'RETRY_BASE_MS',
     ]) {
       delete process.env[name];
     }
@@ -31,6 +32,7 @@ describe('processingConfig', () => {
       leaseMs: 30_000,
       externalTimeoutMs: 10_000,
       processingDelayMs: 5_000,
+      retryBaseMs: 1_000,
     });
   });
 
