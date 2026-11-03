@@ -27,4 +27,35 @@ describe('LeaseReaperService', () => {
       expect.anything(),
     );
   });
+
+  it('stops ticking and waits for the tick in flight on shutdown', async () => {
+    jest.useFakeTimers();
+    let finish!: () => void;
+    const updateMany = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ modifiedCount: 0 });
+        }),
+    );
+    const reaper = new LeaseReaperService(
+      { updateMany } as unknown as Model<Event>,
+      { ...processingConfig(), reaperIntervalMs: 100 },
+      new SchedulerRegistry(),
+    );
+    reaper.onApplicationBootstrap();
+    jest.advanceTimersByTime(100);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+
+    let closed = false;
+    const shutdown = reaper.beforeApplicationShutdown().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    finish();
+    await shutdown;
+
+    jest.advanceTimersByTime(1000);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
 });

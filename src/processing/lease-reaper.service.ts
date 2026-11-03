@@ -1,4 +1,5 @@
 import {
+  BeforeApplicationShutdown,
   Inject,
   Injectable,
   Logger,
@@ -13,8 +14,11 @@ import { processingConfig } from './processing.config';
 import { MAX_ATTEMPTS } from './retry-policy';
 
 @Injectable()
-export class LeaseReaperService implements OnApplicationBootstrap {
+export class LeaseReaperService
+  implements OnApplicationBootstrap, BeforeApplicationShutdown
+{
   private readonly logger = new Logger(LeaseReaperService.name);
+  private tick?: Promise<void>;
 
   constructor(
     @InjectModel(Event.name) private readonly events: Model<Event>,
@@ -27,8 +31,17 @@ export class LeaseReaperService implements OnApplicationBootstrap {
   onApplicationBootstrap(): void {
     this.scheduler.addInterval(
       'lease-reaper',
-      setInterval(() => void this.reap(), this.config.reaperIntervalMs),
+      setInterval(() => {
+        this.tick = this.reap();
+      }, this.config.reaperIntervalMs),
     );
+  }
+
+  // Runs before the Mongo connection closes on shutdown: stop new ticks and let the one in flight
+  // finish, or it fails on a closed client. Cost: shutdown waits for at most 1 updateMany.
+  async beforeApplicationShutdown(): Promise<void> {
+    this.scheduler.deleteInterval('lease-reaper');
+    await this.tick;
   }
 
   // Runs on every worker: 1 updateMany over expired leases is safe to run at the same time and to repeat.
