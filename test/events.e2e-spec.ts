@@ -184,14 +184,18 @@ describe('POST /events (e2e)', () => {
     });
 
     it('1.12 logs one line marked as duplicate', async () => {
-      await post(validEvent()).expect(202);
+      const first = await post(validEvent()).expect(202);
       logs = captureLogs();
 
       await post(validEvent()).expect(200);
 
       const lines = logs.wideEvents();
       expect(lines).toHaveLength(1);
-      expect(lines[0]).toMatchObject({ status: 200, duplicate: true });
+      expect(lines[0]).toMatchObject({
+        status: 200,
+        duplicate: true,
+        eventId: bodyOf(first).id,
+      });
     });
 
     it('1.13 logs one line with the error for an invalid payload', async () => {
@@ -268,6 +272,7 @@ describe('POST /events (e2e)', () => {
     } finally {
       execSync('docker compose unpause mongo', { stdio: 'ignore' });
     }
+    expect(elapsed).toBeGreaterThan(1500);
     expect(elapsed).toBeLessThan(3000);
 
     // The stalled insert may still land after unpause; the dedupKey makes the retry safe.
