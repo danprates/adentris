@@ -28,6 +28,7 @@ describe('WorkerService', () => {
         externalTimeoutMs: 10_000,
         processingDelayMs: 5_000,
         retryBaseMs: 1_000,
+        reaperIntervalMs: 10_000,
       },
     );
     worker.onApplicationBootstrap();

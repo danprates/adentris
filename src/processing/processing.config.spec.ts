@@ -23,6 +23,7 @@ describe('processingConfig', () => {
       'EXTERNAL_TIMEOUT_MS',
       'PROCESSING_DELAY_MS',
       'RETRY_BASE_MS',
+      'REAPER_INTERVAL_MS',
     ]) {
       delete process.env[name];
     }
@@ -33,6 +34,7 @@ describe('processingConfig', () => {
       externalTimeoutMs: 10_000,
       processingDelayMs: 5_000,
       retryBaseMs: 1_000,
+      reaperIntervalMs: 10_000,
     });
   });
 
