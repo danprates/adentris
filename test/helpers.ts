@@ -33,31 +33,39 @@ export interface WideEvent {
   durationMs: number;
   patientId?: string;
   eventId?: string;
+  dedupKey?: string;
   duplicate?: boolean;
   error?: string;
 }
 
-// Captures stdout (where ConsoleLogger writes JSON lines) and returns the wide events seen.
+interface LogLine {
+  context?: string;
+  message: unknown;
+}
+
+// Captures stdout and stderr (where ConsoleLogger writes JSON lines) and parses them.
 export function captureLogs() {
   const chunks: string[] = [];
-  const spy = jest
-    .spyOn(process.stdout, 'write')
-    .mockImplementation((chunk: string | Uint8Array) => {
-      chunks.push(chunk.toString());
-      return true;
-    });
+  const capture = (chunk: string | Uint8Array) => {
+    chunks.push(chunk.toString());
+    return true;
+  };
+  const spies = [
+    jest.spyOn(process.stdout, 'write').mockImplementation(capture),
+    jest.spyOn(process.stderr, 'write').mockImplementation(capture),
+  ];
+  const lines = (): LogLine[] =>
+    chunks
+      .join('')
+      .split('\n')
+      .filter((line) => line.startsWith('{'))
+      .map((line) => JSON.parse(line) as LogLine);
   return {
-    wideEvents(): WideEvent[] {
-      return chunks
-        .join('')
-        .split('\n')
-        .filter((line) => line.startsWith('{'))
-        .map(
-          (line) => JSON.parse(line) as { context?: string; message: unknown },
-        )
+    lines,
+    wideEvents: (): WideEvent[] =>
+      lines()
         .filter((entry) => entry.context === 'WideEvent')
-        .map((entry) => entry.message as WideEvent);
-    },
-    restore: () => spy.mockRestore(),
+        .map((entry) => entry.message as WideEvent),
+    restore: () => spies.forEach((spy) => spy.mockRestore()),
   };
 }

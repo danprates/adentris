@@ -3,13 +3,22 @@ import {
   ExecutionContext,
   HttpException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NestInterceptor,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { Observable, tap } from 'rxjs';
+import { Observable, catchError, tap, throwError } from 'rxjs';
+
+interface HandlerResult {
+  id?: string;
+  duplicate?: boolean;
+  dedupKey?: string;
+}
 
 // One JSON log line per request, emitted at the end with all its context.
+// shortcut: requests Fastify rejects before Nest routing (malformed JSON 400, >64KB 413, 404) get no line;
+// move this to a Fastify onResponse hook when those must be logged too.
 @Injectable()
 export class WideEventInterceptor implements NestInterceptor {
   private readonly logger = new Logger('WideEvent');
@@ -28,23 +37,29 @@ export class WideEventInterceptor implements NestInterceptor {
     const durationMs = () => Math.round(performance.now() - start);
 
     return next.handle().pipe(
-      tap({
-        next: (result: { id?: string } | undefined) =>
-          this.logger.log({
-            ...base,
-            status: reply.statusCode,
-            durationMs: durationMs(),
-            eventId: result?.id,
-            // POST /events answers 200 only for a duplicate (202 for a new event).
-            duplicate: result?.id ? reply.statusCode === 200 : undefined,
-          }),
-        error: (err: unknown) =>
-          this.logger.log({
-            ...base,
-            status: err instanceof HttpException ? err.getStatus() : 500,
-            durationMs: durationMs(),
-            error: errorMessage(err),
-          }),
+      tap((result: HandlerResult | undefined) =>
+        this.logger.log({
+          ...base,
+          status: reply.statusCode,
+          durationMs: durationMs(),
+          eventId: result?.id,
+          dedupKey: result?.dedupKey,
+          duplicate: result?.duplicate,
+        }),
+      ),
+      catchError((err: unknown) => {
+        const http = err instanceof HttpException;
+        this.logger.log({
+          ...base,
+          status: http ? err.getStatus() : 500,
+          durationMs: durationMs(),
+          error: errorMessage(err),
+          stack: http ? undefined : (err as Error)?.stack,
+        });
+        // Nest's exception filter logs unknown errors again; an HttpException keeps it to this one line.
+        return throwError(() =>
+          http ? err : new InternalServerErrorException(),
+        );
       }),
     );
   }

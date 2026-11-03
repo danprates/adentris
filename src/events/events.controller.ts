@@ -12,8 +12,8 @@ export class EventsController {
     @Body() dto: CreateEventDto,
     @Res({ passthrough: true }) reply: FastifyReply,
   ) {
-    const { id, status, duplicate } = await this.events.create(dto);
-    reply.status(duplicate ? 200 : 202);
-    return { id, status };
+    const result = await this.events.create(dto);
+    reply.status(result.duplicate ? 200 : 202);
+    return result;
   }
 }

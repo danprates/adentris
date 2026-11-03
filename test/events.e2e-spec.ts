@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Types } from 'mongoose';
+import { EventsService } from '../src/events/events.service';
 import request, { Response } from 'supertest';
 import {
   captureLogs,
@@ -12,6 +13,8 @@ import {
 interface ResponseBody {
   id: string;
   status: string;
+  duplicate: boolean;
+  dedupKey: string;
   message: string | string[];
 }
 const bodyOf = (res: Response) => res.body as ResponseBody;
@@ -47,14 +50,18 @@ describe('POST /events (e2e)', () => {
   it('1.1 accepts a new event and stores it as pending', async () => {
     const res = await post(validEvent()).expect(202);
 
-    const { id, ...rest } = bodyOf(res);
-    expect(rest).toEqual({ status: 'pending' });
+    const { id, status, duplicate, dedupKey } = bodyOf(res);
+    expect({ status, duplicate }).toEqual({
+      status: 'pending',
+      duplicate: false,
+    });
     const doc = await eventsCollection(app).findOne({
       _id: new Types.ObjectId(id),
     });
     expect(doc?.status).toBe('pending');
     expect(doc?.attempts).toBe(0);
     expect(doc?.dedupKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(doc?.dedupKey).toBe(dedupKey);
     expect(doc?.receivedAt).toBeInstanceOf(Date);
     expect(await count()).toBe(1);
   });
@@ -64,10 +71,7 @@ describe('POST /events (e2e)', () => {
 
     const second = await post(validEvent()).expect(200);
 
-    expect(bodyOf(second)).toEqual({
-      id: bodyOf(first).id,
-      status: 'pending',
-    });
+    expect(bodyOf(second)).toEqual({ ...bodyOf(first), duplicate: true });
     expect(await count()).toBe(1);
   });
 
@@ -174,6 +178,7 @@ describe('POST /events (e2e)', () => {
         status: 202,
         patientId: 'p-1',
         eventId: bodyOf(res).id,
+        dedupKey: bodyOf(res).dedupKey,
         duplicate: false,
       });
     });
@@ -198,6 +203,21 @@ describe('POST /events (e2e)', () => {
       expect(lines).toHaveLength(1);
       expect(lines[0].status).toBe(400);
       expect(lines[0].error).toContain('patientId');
+    });
+
+    it('logs an unexpected error as one line with status 500', async () => {
+      jest
+        .spyOn(app.get(EventsService), 'create')
+        .mockRejectedValueOnce(new Error('boom'));
+      logs = captureLogs();
+
+      await post(validEvent()).expect(500);
+
+      expect(logs.lines()).toHaveLength(1);
+      expect(logs.wideEvents()[0]).toMatchObject({
+        status: 500,
+        error: 'boom',
+      });
     });
   });
 
