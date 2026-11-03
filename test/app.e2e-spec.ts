@@ -31,4 +31,12 @@ describe('App (e2e)', () => {
       .expect(200)
       .expect((res) => expect(res.body).toMatchObject({ status: 'ok' }));
   });
+
+  it('POST /events returns 200 with status ok', () => {
+    return request(app.getHttpServer())
+      .post('/events')
+      .send({ any: 'body' })
+      .expect(200)
+      .expect({ status: 'ok' });
+  });
 });
