@@ -12,8 +12,14 @@ pid=$(docker inspect -f '{{.State.Pid}}' "$worker")
 docker run --rm --pid=host alpine:3.20 kill -9 "$pid"
 echo "$(date -u +%H:%M:%S) killed worker $(echo "$worker" | cut -c1-12) (pid $pid)"
 
+waited=0
 until [ "$(docker inspect -f '{{.State.Pid}}' "$worker")" != "$pid" ] &&
   [ "$(docker inspect -f '{{.State.Running}}' "$worker")" = true ]; do
-  sleep 0.2
+  if [ "$waited" -ge 60 ]; then
+    echo "$(date -u +%H:%M:%S) worker did not restart in 60s" >&2
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
 done
 echo "$(date -u +%H:%M:%S) worker restarted"
