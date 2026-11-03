@@ -16,3 +16,6 @@
 
 # assignment brief and plans, not part of the delivery
 tmp/
+
+# load test output
+load/summary.json
