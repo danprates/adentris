@@ -1,8 +1,11 @@
+import { getModelToken } from '@nestjs/mongoose';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { TestingModule } from '@nestjs/testing';
 import { execSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { Model } from 'mongoose';
 import request from 'supertest';
+import { Event } from '../src/events/schemas/event.schema';
 import { ExternalInput } from '../src/processing/external-processor.service';
 import {
   captureLogs,
@@ -300,6 +303,41 @@ describe('Failure handling (e2e)', () => {
         [1, 'lease_lost'],
         [2, 'done'],
       ]);
+    } finally {
+      logs.restore();
+    }
+  });
+
+  it('leaves a failed completion write to the reaper instead of the retry policy', async () => {
+    const logs = captureLogs();
+    try {
+      const external = flakyExternal(() => false);
+      await insert();
+      const worker = await startWorker({
+        external,
+        env: { ...FAST, EXTERNAL_TIMEOUT_MS: '200', LEASE_MS: '1000' },
+      });
+      const model = worker.get<Model<Event>>(getModelToken(Event.name));
+      // The claim is a findOneAndUpdate, so the first updateOne is the done write.
+      jest
+        .spyOn(model, 'updateOne')
+        .mockRejectedValueOnce(new Error('write down'));
+
+      await waitFor(() => logs.wideEvents().length === 1);
+      const stuck = await find('E1');
+      expect(stuck?.status).toBe('processing');
+      expect(stuck?.error).toBeUndefined();
+
+      await waitFor(() => statusIs('E1', 'done'));
+      await closeWorker(worker);
+
+      expect((await find('E1'))?.attempts).toBe(2);
+      const lines = logs.wideEvents<Record<string, unknown>>();
+      expect(lines.map((l) => [l.attempt, l.outcome, l.writeError])).toEqual([
+        [1, 'write_failed', 'write down'],
+        [2, 'done', undefined],
+      ]);
+      expect(lines[0]).not.toHaveProperty('error');
     } finally {
       logs.restore();
     }

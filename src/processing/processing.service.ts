@@ -11,6 +11,9 @@ import { isExhausted, nextAttemptAt } from './retry-policy';
 export type ClaimedEvent = Event & { _id: Types.ObjectId };
 
 const DUPLICATE_KEY = 11000;
+
+const errorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 // Ready events read per claim; enough distinct patients to find a free one.
 const CLAIM_BATCH = 100;
 
@@ -92,20 +95,30 @@ export class ProcessingService implements OnModuleInit {
       attempt: event.attempts,
     };
     const start = performance.now();
+    // A failed write leaves the event in processing until its lease expires; the reaper counts it as an attempt.
+    const writeFailed = (err: unknown) => {
+      wideEvent.writeError = errorMessage(err);
+      return 'write_failed';
+    };
     try {
-      const result = await this.callExternal(event);
+      let result: Record<string, unknown>;
+      try {
+        result = await this.callExternal(event);
+      } catch (err) {
+        // Only an external error goes to the retry policy; a failed write below does not.
+        wideEvent.externalMs = Math.round(performance.now() - start);
+        const error = errorMessage(err);
+        wideEvent.error = error;
+        wideEvent.outcome = await this.fail(event, error).then(
+          (outcome) => outcome ?? 'lease_lost',
+          writeFailed,
+        );
+        return;
+      }
       wideEvent.externalMs = Math.round(performance.now() - start);
-      wideEvent.outcome = (await this.complete(event, result))
-        ? 'done'
-        : 'lease_lost';
-    } catch (err) {
-      wideEvent.externalMs ??= Math.round(performance.now() - start);
-      const error = err instanceof Error ? err.message : String(err);
-      wideEvent.error = error;
-      wideEvent.outcome = await this.fail(event, error).then(
-        (outcome) => outcome ?? 'lease_lost',
-        // The event stays in processing until its lease expires; the reaper counts it as an attempt.
-        () => 'write_failed',
+      wideEvent.outcome = await this.complete(event, result).then(
+        (done) => (done ? 'done' : 'lease_lost'),
+        writeFailed,
       );
     } finally {
       this.logger.log(wideEvent);
