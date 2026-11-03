@@ -24,5 +24,3 @@ export const processingConfig = registerAs('processing', () => {
   }
   return config;
 });
-
-export type ProcessingConfig = ReturnType<typeof processingConfig>;
