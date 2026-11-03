@@ -70,5 +70,7 @@ EventSchema.index(
   { patientId: 1 },
   { unique: true, partialFilterExpression: { status: 'processing' } },
 );
-EventSchema.index({ status: 1, availableAt: 1, ts: 1 });
-EventSchema.index({ patientId: 1, status: 1, ts: 1 });
+// patientId last: the claim's busy-patient list and ready batch read only this index, no documents.
+EventSchema.index({ status: 1, availableAt: 1, patientId: 1 });
+// _id last: the head lookup sorts by (ts, _id) straight from the index, no in-memory sort.
+EventSchema.index({ patientId: 1, status: 1, ts: 1, _id: 1 });

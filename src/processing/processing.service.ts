@@ -50,7 +50,8 @@ export class ProcessingService implements OnModuleInit {
           availableAt: { $lte: now },
           patientId: { $nin: busy },
         },
-        { patientId: 1 },
+        // No _id: it isn't in the index, so asking for it would fetch every scanned document.
+        { _id: 0, patientId: 1 },
       )
       .sort({ availableAt: 1 })
       .limit(CLAIM_BATCH)

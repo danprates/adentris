@@ -230,8 +230,8 @@ describe('POST /events (e2e)', () => {
       unique: true,
       partialFilterExpression: { status: 'processing' },
     });
-    expect(byKey({ status: 1, availableAt: 1, ts: 1 })).toBeDefined();
-    expect(byKey({ patientId: 1, status: 1, ts: 1 })).toBeDefined();
+    expect(byKey({ status: 1, availableAt: 1, patientId: 1 })).toBeDefined();
+    expect(byKey({ patientId: 1, status: 1, ts: 1, _id: 1 })).toBeDefined();
   });
 
   it('1.15 stores ts as a UTC Date', async () => {
