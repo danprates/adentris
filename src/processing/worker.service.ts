@@ -1,4 +1,5 @@
 import {
+  BeforeApplicationShutdown,
   Inject,
   Injectable,
   Logger,
@@ -10,9 +11,12 @@ import { ProcessingService } from './processing.service';
 
 const IDLE_MS = 1000;
 const FULL_MS = 50;
+const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 @Injectable()
-export class WorkerService implements OnApplicationBootstrap {
+export class WorkerService
+  implements OnApplicationBootstrap, BeforeApplicationShutdown
+{
   private readonly logger = new Logger(WorkerService.name);
   private readonly inFlight = new Set<Promise<void>>();
   private running = false;
@@ -28,6 +32,23 @@ export class WorkerService implements OnApplicationBootstrap {
   onApplicationBootstrap(): void {
     this.running = true;
     this.loop = this.dispatch();
+  }
+
+  // Stops claiming and waits for in-flight events, up to 10s (compose stop_grace_period is 15s).
+  // What does not finish in time comes back when its lease expires.
+  async beforeApplicationShutdown(): Promise<void> {
+    this.running = false;
+    this.wake?.();
+    let timer: NodeJS.Timeout | undefined;
+    const deadline = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, SHUTDOWN_TIMEOUT_MS);
+    });
+    const drain = (async () => {
+      await this.loop;
+      await Promise.all(this.inFlight);
+    })();
+    await Promise.race([drain, deadline]);
+    clearTimeout(timer);
   }
 
   // One loop claims and a counter (the inFlight set) caps concurrency, instead of N polling loops:
