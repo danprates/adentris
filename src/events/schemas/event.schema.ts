@@ -38,6 +38,21 @@ export class Event {
 
   @Prop({ required: true })
   availableAt: Date;
+
+  @Prop()
+  leaseOwner?: string;
+
+  @Prop()
+  leaseUntil?: Date;
+
+  @Prop({ type: SchemaTypes.Mixed })
+  result?: Record<string, unknown>;
+
+  @Prop()
+  processedAt?: Date;
+
+  @Prop({ default: 0 })
+  reprocessCount: number;
 }
 
 export type EventDocument = HydratedDocument<Event>;
@@ -45,7 +60,8 @@ export type EventDocument = HydratedDocument<Event>;
 export const EventSchema = SchemaFactory.createForClass(Event);
 
 EventSchema.index({ dedupKey: 1 }, { unique: true });
-// The database itself forbids two events of the same patient in processing at once.
+// The database guarantees one event per patient in processing.
+// Cost: at most 12 events/min per patient (5s each), across all types.
 EventSchema.index(
   { patientId: 1 },
   { unique: true, partialFilterExpression: { status: 'processing' } },
