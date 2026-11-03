@@ -145,8 +145,8 @@ export class ProcessingService implements OnModuleInit {
       // Only done goes back: pending is already queued, and failed waits for an operator.
       { patientId: event.patientId, status: 'done', ts: { $gt: event.ts } },
       {
-        // attempts restart at 0: a reprocess is a new run and gets its full retries,
-        // not the ones its earlier successful run already spent.
+        // attempts restart at 0: a reprocess is a new run and gets its full retries, not the ones its earlier
+        // run spent. Cost: attempts counts only the current run, so the total external calls are not stored.
         $set: { status: 'pending', availableAt: new Date(), attempts: 0 },
         // A1: each reprocess calls the external API with a new key (dedupKey:reprocessCount);
         // in our Mongo the event stays 1 document.
@@ -172,14 +172,15 @@ export class ProcessingService implements OnModuleInit {
     ]);
   }
 
-  // The lease is this claim's: leaseOwner names the process and attempts (bumped on every claim) the claim,
-  // so a stale handle never overwrites a later claim of the same event, even by this same worker.
+  // The lease is this claim's: leaseOwner names the process and (reprocessCount, attempts) the claim, since
+  // attempts restart at 0 on reprocess; a stale handle never overwrites a later claim, even by this worker.
   private ownLease(event: ClaimedEvent) {
     return {
       _id: event._id,
       status: 'processing',
       leaseOwner: this.workerId,
       attempts: event.attempts,
+      reprocessCount: event.reprocessCount,
     };
   }
 
