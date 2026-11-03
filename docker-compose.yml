@@ -22,5 +22,19 @@ services:
       mongo:
         condition: service_healthy
 
+  worker:
+    build: .
+    command: node dist/worker.js
+    environment:
+      MONGO_URI: mongodb://mongo:27017/ingest
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+    # Above the worker's 10s drain, so SIGKILL never cuts a drain short.
+    stop_grace_period: 15s
+    depends_on:
+      mongo:
+        condition: service_healthy
+
 volumes:
   mongo-data:
