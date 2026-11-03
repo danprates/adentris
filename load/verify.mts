@@ -6,7 +6,11 @@ import mongoose from 'mongoose';
 
 const MONGO_URI = process.env.MONGO_URI ?? 'mongodb://localhost:27017/ingest';
 const SUMMARY = 'load/summary.json';
+// Ids of the 202 responses, one per line, written by k6 (load.js).
+const ACCEPTED_IDS = 'load/accepted.log';
 const INTERVAL_MS = 5000;
+// Above the longest retry chain (2+4+8+16s of backoff plus 5 calls of up to 10s) and a lease expiry.
+const FINAL_TIMEOUT_MS = 5 * 60_000;
 
 interface EventDoc {
   patientId: string;
@@ -58,8 +62,10 @@ function print(s: Snapshot): void {
 }
 
 async function final(events: Events): Promise<boolean> {
+  const deadline = Date.now() + FINAL_TIMEOUT_MS;
   let s = await snapshot(events);
-  while (s.pending + s.processing > 0) {
+  // On timeout the checks still run, and the stuck events fail the pending check.
+  while (s.pending + s.processing > 0 && Date.now() < deadline) {
     print(s);
     await sleep(INTERVAL_MS);
     s = await snapshot(events);
@@ -76,6 +82,16 @@ async function final(events: Events): Promise<boolean> {
   // A failed request (503 after the 2s timeout) may still have stored its event; the sender would retry.
   const failedRequests = summary.metrics.http_req_failed.passes;
   const total = await events.countDocuments();
+
+  const acceptedIds = readFileSync(ACCEPTED_IDS, 'utf8')
+    .split('\n')
+    .filter(Boolean);
+  const stored = new Set<string>();
+  for await (const { _id } of events.find({}, { projection: { _id: 1 } })) {
+    stored.add(String(_id));
+  }
+  const lost = acceptedIds.filter((id) => !stored.has(id));
+  for (const id of lost.slice(0, 10)) console.log(`lost ${id}`);
 
   for await (const f of events.find({ status: 'failed' })) {
     console.log(`failed ${String(f._id)}: ${f.error}`);
@@ -123,9 +139,11 @@ async function final(events: Events): Promise<boolean> {
     .toArray();
 
   const checks = {
-    lost: Math.max(0, acceptedNew - total),
-    // More documents than 202s plus failed requests would mean an event stored twice or out of nowhere.
-    unexplained: Math.max(0, total - acceptedNew - failedRequests),
+    // Every 202 id must be stored; the log must hold all of them, or the check would be incomplete.
+    lost: lost.length,
+    idsNotLogged: acceptedNew - acceptedIds.length,
+    // Documents beyond the 202s can only come from failed requests whose insert landed.
+    unexplained: Math.max(0, total - acceptedIds.length - failedRequests),
     pending: s.pending + s.processing,
     duplicateKeys: dup?.keys ?? 0,
     outOfOrder,
