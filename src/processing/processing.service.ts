@@ -1,9 +1,10 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, mongo, Types } from 'mongoose';
 import { Event } from '../events/schemas/event.schema';
+import { ExternalProcessorService } from './external-processor.service';
 import { processingConfig } from './processing.config';
 
 export type ClaimedEvent = Event & { _id: Types.ObjectId };
@@ -16,9 +17,11 @@ const CLAIM_BATCH = 100;
 export class ProcessingService implements OnModuleInit {
   // Identifies this process as the lease owner; unique per instance, so two workers never share it.
   readonly workerId = randomUUID();
+  private readonly logger = new Logger('WideEvent');
 
   constructor(
     @InjectModel(Event.name) private readonly events: Model<Event>,
+    private readonly external: ExternalProcessorService,
     @Inject(processingConfig.KEY)
     private readonly config: ConfigType<typeof processingConfig>,
   ) {}
@@ -72,5 +75,63 @@ export class ProcessingService implements OnModuleInit {
       }
     }
     return null;
+  }
+
+  // Calls the external API and stores the result. Never throws: the outcome goes to one wide event.
+  async handle(event: ClaimedEvent): Promise<void> {
+    const wideEvent: Record<string, unknown> = {
+      eventId: event._id.toString(),
+      patientId: event.patientId,
+      attempt: event.attempts,
+    };
+    const start = performance.now();
+    try {
+      const result = await this.external.process(
+        event,
+        `${event.dedupKey}:${event.reprocessCount}`,
+      );
+      wideEvent.externalMs = Math.round(performance.now() - start);
+      wideEvent.outcome = (await this.complete(event, result))
+        ? 'done'
+        : 'lease_lost';
+    } catch (err) {
+      wideEvent.externalMs ??= Math.round(performance.now() - start);
+      wideEvent.error = err instanceof Error ? err.message : String(err);
+      wideEvent.outcome = await this.release(event).then(
+        (released) => (released ? 'released' : 'lease_lost'),
+        () => 'release_failed',
+      );
+    } finally {
+      this.logger.log(wideEvent);
+    }
+  }
+
+  // Filtered by leaseOwner: a worker that lost its lease never overwrites another worker's result.
+  private async complete(
+    event: ClaimedEvent,
+    result: Record<string, unknown>,
+  ): Promise<boolean> {
+    const { modifiedCount } = await this.events.updateOne(
+      { _id: event._id, status: 'processing', leaseOwner: this.workerId },
+      {
+        $set: { status: 'done', result, processedAt: new Date() },
+        $unset: { leaseOwner: 1, leaseUntil: 1 },
+      },
+    );
+    return modifiedCount === 1;
+  }
+
+  // shortcut: an error puts the event straight back to pending with no backoff, so a failing API is retried
+  // at once and forever; phase 3 replaces this with backoff and a 5-attempt limit.
+  // If this write fails too, the event stays in processing until its lease expires (the phase 3 reaper).
+  private async release(event: ClaimedEvent): Promise<boolean> {
+    const { modifiedCount } = await this.events.updateOne(
+      { _id: event._id, status: 'processing', leaseOwner: this.workerId },
+      {
+        $set: { status: 'pending' },
+        $unset: { leaseOwner: 1, leaseUntil: 1 },
+      },
+    );
+    return modifiedCount === 1;
   }
 }
