@@ -16,12 +16,15 @@ const errorMessage = (err: unknown) =>
   err instanceof Error ? err.message : String(err);
 // Ready events read per claim; enough distinct patients to find a free one.
 const CLAIM_BATCH = 100;
+// How long a claim reuses the busy-patient list instead of reading it again.
+const BUSY_TTL_MS = 200;
 
 @Injectable()
 export class ProcessingService implements OnModuleInit {
   // Identifies this process as the lease owner; unique per instance, so two workers never share it.
   readonly workerId = randomUUID();
   private readonly logger = new Logger('WideEvent');
+  private busy: { at: number; patients: Set<string> } | null = null;
 
   constructor(
     @InjectModel(Event.name) private readonly events: Model<Event>,
@@ -40,15 +43,13 @@ export class ProcessingService implements OnModuleInit {
     const now = new Date();
     // Events queued behind a busy patient are the oldest ready ones and would fill the batch, so each claim
     // walked dozens of busy heads (load test: ~100 claims/s for 167/s). Cost: 1 more query per claim.
-    const busy = await this.events.distinct('patientId', {
-      status: 'processing',
-    });
+    const busy = await this.busyPatients(now);
     const ready = await this.events
       .find(
         {
           status: 'pending',
           availableAt: { $lte: now },
-          patientId: { $nin: busy },
+          patientId: { $nin: [...busy] },
         },
         // No _id: it isn't in the index, so asking for it would fetch every scanned document.
         { _id: 0, patientId: 1 },
@@ -87,7 +88,11 @@ export class ProcessingService implements OnModuleInit {
           )
           .lean();
         // null: another worker claimed it first.
-        if (claimed) return claimed;
+        if (claimed) {
+          // Keeps the cached list current for this worker's own claims until the next read.
+          this.busy?.patients.add(patientId);
+          return claimed;
+        }
       } catch (err) {
         // 11000: the patient already has an event in processing.
         if (!(
@@ -145,8 +150,25 @@ export class ProcessingService implements OnModuleInit {
         writeFailed,
       );
     } finally {
+      // The patient is free again for this worker's next claim, without waiting for the next list read.
+      this.busy?.patients.delete(event.patientId);
       this.logger.log(wideEvent);
     }
+  }
+
+  // Reading the busy list on every claim scanned ~850 index keys per claim (~200 reads/s per worker).
+  // The list only filters the batch: the head check and the partial unique index still guard every claim.
+  // Cost: for up to BUSY_TTL_MS a freed patient waits, and a patient another worker just claimed costs
+  // 1 wasted head lookup (this worker adds its own claims to the list and removes them when they finish).
+  // No locking needed: the dispatch loop runs one claim at a time per worker.
+  private async busyPatients(now: Date): Promise<Set<string>> {
+    if (!this.busy || now.getTime() - this.busy.at >= BUSY_TTL_MS) {
+      const patients: string[] = await this.events.distinct('patientId', {
+        status: 'processing',
+      });
+      this.busy = { at: now.getTime(), patients: new Set(patients) };
+    }
+    return this.busy.patients;
   }
 
   // Option C: a result depends on the events before it, so a late event sends the later done ones back
