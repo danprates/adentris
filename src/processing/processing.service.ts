@@ -18,6 +18,8 @@ const errorMessage = (err: unknown) =>
 const CLAIM_BATCH = 100;
 // How long a claim reuses the busy-patient list instead of reading it again.
 const BUSY_TTL_MS = 200;
+// How long claims keep trying patients from the last batch before reading a new one.
+const READY_TTL_MS = 200;
 
 @Injectable()
 export class ProcessingService implements OnModuleInit {
@@ -25,6 +27,8 @@ export class ProcessingService implements OnModuleInit {
   readonly workerId = randomUUID();
   private readonly logger = new Logger('WideEvent');
   private busy: { at: number; patients: Set<string> } | null = null;
+  // Patients from the last batch not tried yet, oldest ready first.
+  private ready: { at: number; patients: string[] } | null = null;
 
   constructor(
     @InjectModel(Event.name) private readonly events: Model<Event>,
@@ -41,6 +45,15 @@ export class ProcessingService implements OnModuleInit {
   // Claims the head (lowest ts, then _id) of one patient with ready work; null when none is free.
   async claim(): Promise<ClaimedEvent | null> {
     const now = new Date();
+    // Reading a batch per claim was ~75% of the index keys Mongo read (236 keys to use 1 patient), so claims
+    // reuse it for READY_TTL_MS. Safe for order: each claim still re-reads the head. Cost: a new patient
+    // waits up to READY_TTL_MS, and a patient another worker took costs 1 wasted head lookup.
+    if (this.ready && now.getTime() - this.ready.at < READY_TTL_MS) {
+      const claimed = await this.claimFromReady(now);
+      if (claimed) {
+        return claimed;
+      }
+    }
     // Events queued behind a busy patient are the oldest ready ones and would fill the batch, so each claim
     // walked dozens of busy heads (load test: ~100 claims/s for 167/s). Cost: 1 more query per claim.
     const busy = await this.busyPatients(now);
@@ -57,9 +70,22 @@ export class ProcessingService implements OnModuleInit {
       .sort({ availableAt: 1 })
       .limit(CLAIM_BATCH)
       .lean();
-    const patients = [...new Set(ready.map((e) => e.patientId))];
+    this.ready = {
+      at: now.getTime(),
+      patients: [...new Set(ready.map((e) => e.patientId))],
+    };
+    return this.claimFromReady(now);
+  }
 
-    for (const patientId of patients) {
+  // Tries the cached patients in order and drops each one tried, claimed or not.
+  private async claimFromReady(now: Date): Promise<ClaimedEvent | null> {
+    const patients = this.ready?.patients ?? [];
+    let patientId: string | undefined;
+    while ((patientId = patients.shift()) !== undefined) {
+      // Claimed by this worker since the batch was read.
+      if (this.busy?.patients.has(patientId)) {
+        continue;
+      }
       // Only the patient's head (lowest ts among pending and processing) is claimed; later events wait,
       // even while the head runs or waits for a retry, so a head released mid-claim never gets overtaken.
       const head = await this.events

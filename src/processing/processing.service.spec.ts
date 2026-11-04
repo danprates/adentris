@@ -18,6 +18,7 @@ describe('ProcessingService busy-patient list', () => {
   const start = new Date('2026-11-04T08:00:00Z');
   let distinct: jest.Mock;
   let find: jest.Mock;
+  let findOne: jest.Mock;
   let service: ProcessingService;
 
   beforeEach(() => {
@@ -25,12 +26,14 @@ describe('ProcessingService busy-patient list', () => {
     distinct = jest.fn(() => Promise.resolve(['p1']));
     // An empty ready batch by default: claim() reads the busy list, finds nothing and returns null.
     find = jest.fn(() => query([]));
+    findOne = jest.fn(() =>
+      query({ _id: 'e2', status: 'pending', availableAt: start }),
+    );
     service = new ProcessingService(
       {
         distinct,
         find,
-        findOne: () =>
-          query({ _id: 'e2', status: 'pending', availableAt: start }),
+        findOne,
         findOneAndUpdate: () => query({ _id: 'e2', patientId: 'p2' }),
       } as unknown as Model<Event>,
       {} as ExternalProcessorService,
@@ -81,5 +84,68 @@ describe('ProcessingService busy-patient list', () => {
     expect(distinct).toHaveBeenCalledTimes(1);
     expect(excludedOnCall(0)).toEqual(['p1']);
     expect(excludedOnCall(1)).toEqual(['p1', 'p2']);
+  });
+});
+
+describe('ProcessingService ready batch', () => {
+  const start = new Date('2026-11-04T08:00:00Z');
+  let find: jest.Mock;
+  let findOne: jest.Mock;
+  let service: ProcessingService;
+
+  beforeEach(() => {
+    jest.useFakeTimers({ now: start });
+    find = jest.fn(() => query([{ patientId: 'p2' }, { patientId: 'p3' }]));
+    findOne = jest.fn(() =>
+      query({ _id: 'e2', status: 'pending', availableAt: start }),
+    );
+    service = new ProcessingService(
+      {
+        distinct: () => Promise.resolve([]),
+        find,
+        findOne,
+        findOneAndUpdate: () => query({ _id: 'e2', patientId: 'p2' }),
+      } as unknown as Model<Event>,
+      {} as ExternalProcessorService,
+      processingConfig(),
+    );
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  const headLookups = () =>
+    (findOne.mock.calls as [{ patientId: string }][]).map(([f]) => f.patientId);
+
+  it('tries the next cached patient within 200ms', async () => {
+    await service.claim();
+    jest.setSystemTime(start.getTime() + 199);
+    await service.claim();
+
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(headLookups()).toEqual(['p2', 'p3']);
+  });
+
+  it('reads a new batch after 200ms', async () => {
+    await service.claim();
+    jest.setSystemTime(start.getTime() + 200);
+    await service.claim();
+
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(headLookups()).toEqual(['p2', 'p2']);
+  });
+
+  it('reads a new batch in the same claim when no cached patient is free', async () => {
+    await service.claim();
+    // p3's head is already processing in another worker.
+    findOne.mockImplementationOnce(() =>
+      query({ _id: 'e3', status: 'processing', availableAt: start }),
+    );
+    await expect(service.claim()).resolves.not.toBeNull();
+
+    expect(find).toHaveBeenCalledTimes(2);
+    // p2 is skipped in the new batch: this worker claimed it on the first call.
+    expect(headLookups()).toEqual(['p2', 'p3', 'p3']);
   });
 });
