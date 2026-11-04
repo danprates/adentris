@@ -13,31 +13,31 @@ export type EventStatus = (typeof EVENT_STATUSES)[number];
 @Schema({ collection: 'events', versionKey: false, minimize: false })
 export class Event {
   @Prop({ required: true })
-  dedupKey: string;
+  dedupKey!: string;
 
   @Prop({ required: true })
-  patientId: string;
+  patientId!: string;
 
   @Prop({ required: true })
-  type: string;
+  type!: string;
 
   @Prop({ type: SchemaTypes.Mixed, required: true })
-  data: Record<string, unknown>;
+  data!: Record<string, unknown>;
 
   @Prop({ required: true })
-  ts: Date;
+  ts!: Date;
 
   @Prop({ required: true })
-  receivedAt: Date;
+  receivedAt!: Date;
 
   @Prop({ type: String, enum: EVENT_STATUSES, default: 'pending' })
-  status: EventStatus;
+  status!: EventStatus;
 
   @Prop({ default: 0 })
-  attempts: number;
+  attempts!: number;
 
   @Prop({ required: true })
-  availableAt: Date;
+  availableAt!: Date;
 
   @Prop()
   leaseOwner?: string;
@@ -56,7 +56,7 @@ export class Event {
   processedAt?: Date;
 
   @Prop({ default: 0 })
-  reprocessCount: number;
+  reprocessCount!: number;
 }
 
 export type EventDocument = HydratedDocument<Event>;

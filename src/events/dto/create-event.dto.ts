@@ -13,14 +13,14 @@ const ISO_WITH_OFFSET = /T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i;
 export class CreateEventDto {
   @IsString()
   @IsNotEmpty()
-  patientId: string;
+  patientId!: string;
 
   @IsString()
   @IsNotEmpty()
-  type: string;
+  type!: string;
 
   @IsObject()
-  data: Record<string, unknown>;
+  data!: Record<string, unknown>;
 
   // ts becomes a UTC Date so ordering and dedup compare instants, not strings.
   // C1: we trust the sender's clock; a clock running ahead orders events wrongly.
@@ -34,5 +34,5 @@ export class CreateEventDto {
   @IsDate({
     message: 'ts must be an ISO 8601 date-time with a timezone offset',
   })
-  ts: Date;
+  ts!: Date;
 }
