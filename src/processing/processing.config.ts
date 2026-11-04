@@ -12,6 +12,8 @@ function positiveInt(name: string, fallback: number): number {
 export const processingConfig = registerAs('processing', () => {
   const config = {
     concurrency: positiveInt('WORKER_CONCURRENCY', 500),
+    // A dead worker's events return when the lease expires plus up to 1 reaper tick. Cost: they wait up to 40s
+    // with the defaults; a shorter lease would force a shorter external timeout (it must stay below the lease).
     leaseMs: positiveInt('LEASE_MS', 30_000),
     externalTimeoutMs: positiveInt('EXTERNAL_TIMEOUT_MS', 10_000),
     processingDelayMs: positiveInt('PROCESSING_DELAY_MS', 5_000),

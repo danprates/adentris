@@ -30,11 +30,13 @@ export class EventsService implements OnModuleInit {
 
   // B1: no backlog limit at the door; we accept while Mongo writes.
   // Refusing would push the load back to senders and trigger mass retries.
+  // Cost: during a worker outage the queue grows and drains only at the spare worker capacity.
   async create(dto: CreateEventDto): Promise<CreateEventResult> {
     try {
       return await this.insertOrFindOriginal(dto, dedupKey(dto));
     } catch (err) {
       // 503 instead of waiting: the sender retries and the dedupKey covers the retry.
+      // Cost: the sender must retry on 503.
       if (err instanceof mongo.MongoOperationTimeoutError) {
         throw new ServiceUnavailableException('Event store timed out, retry');
       }
@@ -49,6 +51,7 @@ export class EventsService implements OnModuleInit {
     const now = new Date();
     try {
       // j: true before the 202: an accepted event is on the journal and survives a crash.
+      // Cost: each insert waits for the journal; a slow fsync stalls the 202s (one of ~500ms seen in a 3-min load run).
       // The driver's insertOne, not save(): save() drops timeoutMS; new Model() still applies schema defaults.
       const doc = new this.events({
         ...dto,
@@ -67,6 +70,7 @@ export class EventsService implements OnModuleInit {
         dedupKey: key,
       };
     } catch (err) {
+      // A duplicate is also the retry of a sender whose 202 was lost when the api died after the insert.
       if (!(
         err instanceof mongo.MongoServerError && err.code === DUPLICATE_KEY
       )) {

@@ -16,6 +16,8 @@ export class EventsController {
   ) {
     const { id, status, duplicate, dedupKey } = await this.events.create(dto);
     req.wideEvent = { eventId: id, dedupKey, duplicate };
+    // 202 once the event is stored; a worker processes it later, so the sender never waits for the ~5s call.
+    // Cost: 202 means stored, not processed.
     reply.status(duplicate ? 200 : 202);
     return { id, status };
   }

@@ -8,6 +8,7 @@ import { WideEventInterceptor } from './common/wide-event.interceptor';
 
 // Shared by main.ts and the e2e tests so both boot the api with the same configuration.
 export function createAdapter(): FastifyAdapter {
+  // 64KB caps the memory one request can take. Cost: a bigger event is refused with 413, not stored.
   return new FastifyAdapter({ bodyLimit: 64 * 1024 });
 }
 
