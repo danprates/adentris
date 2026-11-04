@@ -22,6 +22,8 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/ingest
       PORT: 3000
+    # The api keeps no state, so a crashed one comes back on its own; senders retry what it dropped.
+    restart: unless-stopped
     depends_on:
       mongo:
         condition: service_healthy

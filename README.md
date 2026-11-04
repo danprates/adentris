@@ -90,7 +90,7 @@ sender ──POST /events──▶ api ──insert (j: true)──▶ MongoDB: 
                           └── 202 / 200 / 400 / 503      └── lease reaper (in every worker, every 10 s)
 ```
 
-- **api** (`src/main.ts`): validates the event, stores it as `pending` and answers. It never processes anything.
+- **api** (`src/main.ts`): validates the event, stores it as `pending` and answers. It never processes anything. Compose restarts a crashed one.
 - **worker** (`src/worker.ts`): a Nest application context with no HTTP server. It claims events, calls the external system and stores the result. Compose runs 2 replicas and restarts a crashed one.
 - **MongoDB** is both the store and the queue. The workers do not know about each other: the indexes coordinate them.
 
@@ -182,7 +182,7 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
 - **A lease of 30 s and a reaper.** If a worker dies, its events stay in `processing` until the lease expires. The reaper, which runs every 10 s in every worker, sends them back to `pending`. It is one `updateMany` over expired leases, so running it in several workers at once is safe. It registers with `SchedulerRegistry.addInterval`, not `@Interval`, because the period comes from config. Cost: a crashed worker's events wait up to 40 s. `src/processing/lease-reaper.service.ts`, `src/processing/processing.config.ts`
 - **An expired lease counts as an attempt.** An event that kills its worker every time turns `failed` after 5 attempts instead of looping forever. If a worker cannot write a result to Mongo, it also leaves the event to the reaper. `src/processing/lease-reaper.service.ts`, `src/processing/processing.service.ts`
 - **The external timeout (10 s) stays below the lease (30 s).** Otherwise a second worker could claim an event whose first call is still running. The worker refuses to boot if `EXTERNAL_TIMEOUT_MS` ≥ `LEASE_MS`. `src/processing/processing.config.ts`, `src/processing/processing.service.ts`
-- **The api keeps no state.** If the api dies after the insert and before the `202`, the sender times out and retries, and the dedup key answers `200` with the original `id`. If it dies before the insert, the retry stores the event. Compose does not restart the api by itself. `src/events/events.service.ts`
+- **The api keeps no state.** If the api dies after the insert and before the `202`, the sender times out and retries, and the dedup key answers `200` with the original `id`. If it dies before the insert, the retry stores the event. Compose restarts a crashed api (`restart: unless-stopped`). `src/events/events.service.ts`, `docker-compose.yml`
 - **Shutdown drains for 10 s.** On `SIGTERM` the worker stops claiming and waits up to 10 s for running events; compose waits 15 s before `SIGKILL`. Events that do not finish come back when their lease expires. `src/processing/worker.service.ts`
 
 ### A sender must get an answer immediately
