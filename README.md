@@ -51,25 +51,26 @@ Two tests pause the compose Mongo container, for about 2 s and for 3 s, to check
 
 ## Prove it holds up
 
-`load/` holds a [k6](https://k6.io) load test, a crash script and a checker.
-The load test runs in the compose network.
-It sends events for 5,000 patients. 10% of the requests resend an earlier event byte for byte. Each `ts` is up to 30 s in the past, so a patient's events arrive out of order.
-`npm run load` deletes every event in the `ingest` database first.
+`load/` holds a [k6](https://k6.io) load test, a crash script and a checker. The compose profile `load` runs all three in the compose network.
+The load test sends events for 5,000 patients. 10% of the requests resend an earlier event byte for byte. Each `ts` is up to 30 s in the past, so a patient's events arrive out of order.
 
-1. Run 10 minutes at the assignment load (17 events/s = 1,020 events/min), and kill one worker with `SIGKILL` at minute 3:
+Run the whole check with one command:
 
-   ```bash
-   docker compose up -d --build
-   RATE=17 DURATION=10m npm run load & load/chaos.sh; wait
-   ```
+```bash
+docker compose --profile load up --build --attach k6 --attach chaos --attach verify --abort-on-container-failure
+```
 
-2. When the load ends, check that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order. The check waits for the queue to drain first, and needs the `npm ci` from [Run it](#run-it):
+The command runs these steps in order:
 
-   ```bash
-   npm run verify -- --final
-   ```
+1. It starts Mongo, the api and 2 workers, and waits until Mongo and the api pass their health checks.
+2. `reset` deletes every event in the `ingest` database and the previous k6 output.
+3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes. It prints `✓` or `✗` for the `p99 < 100 ms` threshold.
+4. `chaos` kills one worker with `SIGKILL` at minute 3 and waits for Compose to restart it. It mounts the Docker socket to reach the worker's process.
+5. `verify` waits for the queue to drain, then checks that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order. It prints `PASS` or `FAIL`.
 
-   Without `--final`, `npm run verify` prints the count per status every 5 s.
+The command exits with `verify`'s code: 0 for `PASS`. A failed latency threshold shows as `✗` but does not change the exit code, so `verify` always runs. Set `DURATION=1m` in front of the command for a short run. We tested the command with Docker Compose 2.40.
+
+To watch the count per status every 5 s while a load runs, use `npm run verify` (it needs the `npm ci` from [Run it](#run-it)).
 
 Measured on one laptop (Docker VM with 8 vCPU), with k6, the api, 2 workers and Mongo capped at 3.5 CPU in total:
 

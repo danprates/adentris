@@ -15,8 +15,9 @@ export const options = {
     ingest: {
       // Fixed arrival rate: a slow response does not slow the sender down, like real traffic.
       executor: 'constant-arrival-rate',
-      rate: Number(__ENV.RATE || 167), // 167/s = 10k events/min
-      timeUnit: '1s',
+      // The assignment load: 1,000 events/min.
+      rate: 1000,
+      timeUnit: '1m',
       duration: __ENV.DURATION || '10m',
       preAllocatedVUs: 50,
       maxVUs: 300,

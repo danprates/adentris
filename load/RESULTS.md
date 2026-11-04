@@ -4,7 +4,7 @@ Setup for every run: one laptop (Docker Desktop VM with 8 vCPU and 8 GB) runs k6
 
 ## Assignment load: 1,000 events/min
 
-k6 takes a whole number of events per second, so the runs use 17/s = 1,020 events/min.
+Runs A–C used 17 events/s = 1,020 events/min. The load test now sends exactly 1,000 events/min.
 
 | Metric | Run A | Run B | Run C |
 | --- | --- | --- | --- |
@@ -23,14 +23,12 @@ Every final verify: documents = `accepted_new`, 0 lost, 0 pending, 0 failed, 0 d
 Run it:
 
 ```bash
-docker compose up -d --build
-RATE=17 DURATION=10m npm run load & load/chaos.sh; wait
-npm run verify -- --final
+docker compose --profile load up --build --attach k6 --attach chaos --attach verify --abort-on-container-failure
 ```
 
 ## Headroom: 10,000 events/min
 
-The same stack at 167 events/s, 10× the assignment load.
+The same stack at 167 events/s, 10× the assignment load. These runs are a record of the headroom check; the load test no longer has a setting for this rate.
 
 | Metric | Run 1 (before fix) | Run 2 | Run 3 | Run 4 (after tuning, CPU caps) |
 | --- | --- | --- | --- | --- |

@@ -1,3 +1,6 @@
+# Fixed name: the chaos service runs `docker compose` from inside a container, where the folder name differs.
+name: adentris
+
 services:
   mongo:
     image: mongo:8
@@ -24,6 +27,11 @@ services:
       PORT: 3000
     # The api keeps no state, so a crashed one comes back on its own; senders retry what it dropped.
     restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3000/health']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     depends_on:
       mongo:
         condition: service_healthy
@@ -44,7 +52,21 @@ services:
       mongo:
         condition: service_healthy
 
-  # Load generator, only for npm run load; on the compose network, so it reaches the api by name.
+  # The load profile runs the whole load test: reset, k6, chaos and verify, in that order.
+  # Clears the events and the previous k6 output, so verify compares this run only.
+  reset:
+    image: mongo:8
+    profiles: [load]
+    volumes:
+      - ./load:/load
+    command: >-
+      sh -c 'rm -f /load/summary.json /load/accepted.log &&
+      mongosh --quiet mongodb://mongo:27017/ingest --eval "db.events.deleteMany({})"'
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # Load generator; on the compose network, so it reaches the api by name.
   k6:
     image: grafana/k6:1.3.0
     profiles: [load]
@@ -53,10 +75,50 @@ services:
       - ./load:/load
     environment:
       - DURATION
-      - RATE
-    command: >-
-      run --summary-export /load/summary.json --log-format raw
-      --console-output /load/accepted.log /load/load.js
+    # Exits 0 even when a latency threshold fails (it prints ✗), so verify always checks the data.
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        k6 run --summary-export /load/summary.json --log-format raw
+        --console-output /load/accepted.log /load/load.js || true
+    depends_on:
+      reset:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  # SIGKILLs one worker at minute 3 of the load; needs the Docker socket to reach the worker's process.
+  chaos:
+    image: docker:27.5.1-cli
+    profiles: [load]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/work
+    working_dir: /work
+    environment:
+      - CHAOS_DELAY_S
+    command: sh load/chaos.sh
+    depends_on:
+      k6:
+        condition: service_started
+
+  # Waits for the queue to drain, then checks nothing was lost, duplicated or applied out of order.
+  verify:
+    build: .
+    profiles: [load]
+    volumes:
+      - ./load:/app/load
+    environment:
+      MONGO_URI: mongodb://mongo:27017/ingest
+    command: node load/verify.mts --final
+    depends_on:
+      k6:
+        condition: service_completed_successfully
+      chaos:
+        condition: service_completed_successfully
 
 volumes:
   mongo-data:

@@ -18,8 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
-    "load": "rm -f load/summary.json load/accepted.log && docker compose exec -T mongo mongosh --quiet ingest --eval \"db.events.deleteMany({})\" && docker compose run --rm k6",
-    "chaos": "sh load/chaos.sh",
+    "load": "docker compose run --rm k6",
     "verify": "node load/verify.mts"
   },
   "dependencies": {
