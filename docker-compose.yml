@@ -1,9 +1,9 @@
 services:
   mongo:
     image: mongo:8
-    # CPU caps keep load numbers repeatable on a shared laptop; total 7 of the host's 8 cores.
-    # Mongo peaked at 241% in load runs, so 2.5 leaves headroom.
-    cpus: 2.5
+    # CPU caps keep load numbers repeatable on a shared laptop; total 3.5 of the host's 8 cores.
+    # Sized from 3-min runs at 167/s (Mongo avg 43-60%, api/worker peaks under 50%); spikes above the cap get throttled.
+    cpus: 1.5
     ports:
       - '27017:27017'
     volumes:
@@ -16,7 +16,7 @@ services:
 
   api:
     build: .
-    cpus: 1.5
+    cpus: 0.5
     ports:
       - '3000:3000'
     environment:
@@ -30,7 +30,7 @@ services:
     build: .
     command: node dist/worker.js
     # Per replica.
-    cpus: 1
+    cpus: 0.5
     environment:
       MONGO_URI: mongodb://mongo:27017/ingest
     deploy:
@@ -46,7 +46,7 @@ services:
   k6:
     image: grafana/k6:1.3.0
     profiles: [load]
-    cpus: 1
+    cpus: 0.5
     volumes:
       - ./load:/load
     environment:
