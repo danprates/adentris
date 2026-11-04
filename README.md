@@ -9,68 +9,30 @@ It guarantees three things:
 - **Each patient's events are applied in `ts` order**, even when they arrive out of order. Two limits apply: we trust the sender's clock (C1), and a `failed` event does not hold the patient (see [Problems and decisions](#problems-and-decisions)).
 
 It runs on NestJS 11 (Fastify), MongoDB 8 and Node 26.
-This README covers how to run and check the service, how it works, and why it works that way.
+This README covers how to run and check the service (one command, see [Run it](#run-it)), how it works, and why it works that way.
 It does not cover authentication, real clinical logic or a real external API: the external call is a fake that waits 5 s.
 
 ## Run it
 
-You need Docker with Compose v2 and Node 26 (see `.nvmrc`).
-
-1. Start Mongo, the api and 2 workers:
-
-   ```bash
-   docker compose up -d --build
-   ```
-
-2. Send an event. The first call answers `202`, the same call again answers `200` with the same `id`:
-
-   ```bash
-   curl -i localhost:3000/events -H 'content-type: application/json' \
-     -d '{"patientId":"p-1","type":"heart_rate","data":{"bpm":72},"ts":"2026-11-04T10:00:00Z"}'
-   ```
-
-3. Install the dev dependencies and run the unit and e2e tests:
-
-   ```bash
-   npm ci
-   npm test
-   npm run test:e2e
-   ```
-
-The e2e tests use the compose Mongo with their own database, `ingest_test`, and start every test from an empty collection.
-Two tests pause the compose Mongo container, for about 2 s and for 3 s, to check what a stall does. The api and workers of the running stack stall with it.
-
-| Test file                        | Risk it covers                                                                                               |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `test/app.e2e-spec.ts`           | `GET /health` answers `200`                                                                                  |
-| `test/events.e2e-spec.ts`        | Contract, validation, duplicates (also 10 at once), UTC `ts`, `503` when Mongo stalls                        |
-| `test/processing.e2e-spec.ts`    | Order per patient, one event per patient at a time, 2 workers process each event once, shutdown              |
-| `test/failures.e2e-spec.ts`      | Retry, `failed`, expired lease, stale writes, hung external call, a 3 s Mongo stall, a resent `failed` event |
-| `test/late-arrivals.e2e-spec.ts` | Late events, reprocessing in `ts` order, a reprocess cut short by a crash                                    |
-| `src/**/*.spec.ts`               | Dedup key, retry policy, dispatch loop, claim caches, lease reaper, config checks                            |
-
-## Prove it holds up
-
-`load/` holds a [k6](https://k6.io) load test, a crash script and a checker. The compose profile `load` runs all three in the compose network.
-The load test sends events for 5,000 patients. 10% of the requests resend an earlier event byte for byte. Each `ts` is up to 30 s in the past, so a patient's events arrive out of order.
-
-Run the whole check with one command:
+You need Docker with Compose 2.40 or later. Run one command:
 
 ```bash
 docker compose --profile load up --build --attach k6 --attach chaos --attach verify --abort-on-container-failure
 ```
 
+It builds and starts everything, runs a 10-minute load test, and checks the data. It takes about 11 minutes and ends with `PASS` or `FAIL`. The exit code is 0 for `PASS`.
+
 The command runs these steps in order:
 
 1. It starts Mongo, the api and 2 workers, and waits until Mongo and the api pass their health checks.
-2. `reset` deletes every event in the `ingest` database and the previous k6 output.
-3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes. It prints `✓` or `✗` for the `p99 < 100 ms` threshold.
-4. `chaos` kills one worker with `SIGKILL` at minute 3 and waits for Compose to restart it. It mounts the Docker socket to reach the worker's process.
-5. `verify` waits for the queue to drain, then checks that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order. It prints `PASS` or `FAIL`.
+2. `reset` deletes every event in the `ingest` database.
+3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes: events for 5,000 patients, 10% of them resent byte for byte, each `ts` up to 30 s in the past so a patient's events arrive out of order. It prints `✓` or `✗` for `p99 < 100 ms`.
+4. `chaos` kills one worker with `SIGKILL` at minute 3 and waits for Compose to restart it.
+5. `verify` waits for the queue to drain, then checks that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order.
 
-The command exits with `verify`'s code: 0 for `PASS`. A failed latency threshold shows as `✗` but does not change the exit code, so `verify` always runs. Set `DURATION=1m` in front of the command for a short run. We tested the command with Docker Compose 2.40.
+A failed latency threshold shows as `✗` but does not change the exit code, so `verify` always runs. The stack keeps running afterwards; `docker compose --profile load down -v` removes it and its data.
 
-To watch the count per status every 5 s while a load runs, use `npm run verify` (it needs the `npm ci` from [Run it](#run-it)).
+### Results
 
 Measured on one laptop (Docker VM with 8 vCPU), with k6, the api, 2 workers and Mongo capped at 3.5 CPU in total:
 
@@ -82,6 +44,39 @@ Measured on one laptop (Docker VM with 8 vCPU), with k6, the api, 2 workers and 
 At 1,000 events/min the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
 The first run at 10,000 events/min found a bug: the query that picks the next event filled its batch with busy patients (patients that already have an event in processing), and the queue grew without limit. The fix leaves busy patients out of the batch.
 [`load/RESULTS.md`](load/RESULTS.md) has every run, the stalls we measured and the tuning between runs.
+
+### Optional
+
+None of these are needed to check the service.
+
+- **Short run.** Put `DURATION=1m` in front of the command above.
+- **Send one event.** With the stack running, the first call answers `202`, and the same call again answers `200` with the same `id`:
+
+  ```bash
+  curl -i localhost:3000/events -H 'content-type: application/json' \
+    -d '{"patientId":"p-1","type":"heart_rate","data":{"bpm":72},"ts":"2026-11-04T10:00:00Z"}'
+  ```
+
+- **Unit and e2e tests.** They need Node 26 (see `.nvmrc`) and the stack running (`docker compose up -d --build`):
+
+  ```bash
+  npm ci
+  npm test
+  npm run test:e2e
+  ```
+
+  The e2e tests use the compose Mongo with their own database, `ingest_test`, and start every test from an empty collection. Two tests pause the compose Mongo container, for about 2 s and for 3 s, to check what a stall does; the running api and workers stall with it.
+
+  | Test file                        | Risk it covers                                                                                               |
+  | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+  | `test/app.e2e-spec.ts`           | `GET /health` answers `200`                                                                                  |
+  | `test/events.e2e-spec.ts`        | Contract, validation, duplicates (also 10 at once), UTC `ts`, `503` when Mongo stalls                        |
+  | `test/processing.e2e-spec.ts`    | Order per patient, one event per patient at a time, 2 workers process each event once, shutdown              |
+  | `test/failures.e2e-spec.ts`      | Retry, `failed`, expired lease, stale writes, hung external call, a 3 s Mongo stall, a resent `failed` event |
+  | `test/late-arrivals.e2e-spec.ts` | Late events, reprocessing in `ts` order, a reprocess cut short by a crash                                    |
+  | `src/**/*.spec.ts`               | Dedup key, retry policy, dispatch loop, claim caches, lease reaper, config checks                            |
+
+- **Watch the queue.** `npm run verify` prints the count per status every 5 s while a load runs (after `npm ci`).
 
 ## Architecture
 
