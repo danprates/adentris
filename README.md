@@ -40,7 +40,7 @@ Measured on one laptop (Docker VM with 8 vCPU), with CPU caps in compose so the 
 | -------------------------- | -------------------- | --------------- | ------------------------------------------ |
 | 1,000 events/min, runs A–C | 8.0 / 10.9 / 15.2 ms | 0               | PASS: 0 lost, 0 duplicated, 0 out of order |
 
-At 1,000 events/min the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
+In runs A–C the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
 A load run found a bug: the query that picks the next event filled its batch with busy patients (patients that already have an event in processing), and the queue grew without limit. The fix leaves busy patients out of the batch.
 [`load/RESULTS.md`](load/RESULTS.md) has every run, a headroom check at 10,000 events/min, the stalls we measured and the tuning between runs.
 
@@ -64,7 +64,7 @@ None of these are needed to check the service.
   npm run test:e2e
   ```
 
-  The e2e tests use the compose Mongo with their own database, `ingest_test`, and start every test from an empty collection. Two tests pause the compose Mongo container, for about 2 s and for 3 s, to check what a stall does; the running api and workers stall with it.
+  The e2e tests use the compose Mongo with their own database, `ingest_test`, and start every test from an empty collection. Three tests pause the compose Mongo container, for 2 to 5 s each, to check what a stall does; the running api and workers stall with it.
 
   | Test file                        | Risk it covers                                                                                               |
   | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -73,7 +73,7 @@ None of these are needed to check the service.
   | `test/processing.e2e-spec.ts`    | Order per patient, one event per patient at a time, 2 workers process each event once, shutdown              |
   | `test/failures.e2e-spec.ts`      | Retry, `failed`, expired lease, stale writes, hung external call, a 3 s Mongo stall, a resent `failed` event |
   | `test/late-arrivals.e2e-spec.ts` | Late events, reprocessing in `ts` order, a reprocess cut short by a crash                                    |
-  | `src/**/*.spec.ts`               | Dedup key, retry policy, dispatch loop, claim caches, lease reaper, config checks                            |
+  | `src/**/*.spec.ts`               | Dedup key, `patientRef`, retry policy, dispatch loop, lease reaper, config checks                            |
 
 - **Watch the queue.** `npm run verify` prints the count per status every 5 s while a load runs (after `npm ci`).
 
