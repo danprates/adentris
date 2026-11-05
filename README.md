@@ -28,7 +28,7 @@ The command runs these steps in order:
 2. `reset` deletes every event in the `ingest` database.
 3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes: events for 500 patients, 10% of them resent byte for byte, each `ts` up to 30 s in the past so a patient's events arrive out of order. With 500 patients, about 1 event in 8 arrives after a later one of its patient and reprocesses it (2-min run: 226 of 1,807 events); 5,000 patients gave 1 in 80. It prints `✓` or `✗` for `p99 < 100 ms`.
 4. `chaos` kills one worker with `SIGKILL` halfway through the load (minute 5 of 10) and waits for Compose to restart it.
-5. `verify` waits for the queue to drain, then checks that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order.
+5. `verify` waits for the queue to drain, then checks that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order. It checks when each event's last run finished, not the results: the fake external system keeps no state, so no result shows which events it saw. The e2e tests cover that side with a spy on the external calls: one call per patient at a time (`test/processing.e2e-spec.ts`), and after a late event every later event is called again in `ts` order (`test/late-arrivals.e2e-spec.ts`).
 
 A failed latency threshold shows as `✗` but does not change the exit code, so `verify` always runs. The stack keeps running afterwards; `docker compose --profile load down -v` removes it and its data.
 
