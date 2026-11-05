@@ -275,4 +275,5 @@ The worker treats it as a late event: it reprocesses the patient's `done` events
 - **An archiving policy.** Clinical data is not deleted, and 1,000 events/min is 1.44 million documents per day.
 - **Batch inserts** (`insertMany`) per short request window, if the per-insert journal wait limits the api.
 - **A wide event for requests that Fastify rejects before Nest** (malformed JSON, `413`, `404`). Today those get no log line.
+- **A liveness check for the worker.** The dispatch loop would write a heartbeat every few seconds, and Kubernetes would restart a worker whose heartbeat is older than 30 s. Today a loop stuck on something other than Mongo (which times out after 5 s) leaves the container running and idle. Compose does not restart unhealthy containers, so it would not help here.
 - **An endpoint or script for requeueing**, instead of a `mongosh` update.
