@@ -1,6 +1,6 @@
 # Load test results
 
-Setup for every run: one laptop (Docker Desktop VM with 8 vCPU and 8 GB) runs k6, the api, 2 workers × 500 slots and a single-node Mongo. Each run lasts 10 min, with 5000 patients, 10% duplicates and `ts` up to 30s in the past. At minute 3 one worker gets SIGKILL (`load/chaos.sh`). `docker-compose.yml` caps CPU at Mongo 1.5, api 0.5, each worker 0.5 and k6 0.5 (3.5 of 8 cores); runs 1–3 at 10,000 events/min ran before the caps.
+Setup for every run: one laptop (Docker Desktop VM with 8 vCPU and 8 GB) runs k6, the api, 2 workers × 500 slots and a single-node Mongo. Each run below lasts 10 min, with 5000 patients (the load now uses 500, so ordering gets about 10× more late arrivals), 10% duplicates and `ts` up to 30s in the past. At minute 3 one worker gets SIGKILL (`load/chaos.sh`). `docker-compose.yml` caps CPU at Mongo 1.5, api 0.5, each worker 0.5 and k6 0.5 (3.5 of 8 cores); runs 1–3 at 10,000 events/min ran before the caps.
 
 ## Assignment load: 1,000 events/min
 

@@ -26,7 +26,7 @@ The command runs these steps in order:
 
 1. It starts Mongo, the api and 2 workers, and waits until Mongo and the api pass their health checks.
 2. `reset` deletes every event in the `ingest` database.
-3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes: events for 5,000 patients, 10% of them resent byte for byte, each `ts` up to 30 s in the past so a patient's events arrive out of order. It prints `✓` or `✗` for `p99 < 100 ms`.
+3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes: events for 500 patients, 10% of them resent byte for byte, each `ts` up to 30 s in the past so a patient's events arrive out of order. With 500 patients, about 1 event in 8 arrives after a later one of its patient and reprocesses it (2-min run: 226 of 1,807 events); 5,000 patients gave 1 in 80. It prints `✓` or `✗` for `p99 < 100 ms`.
 4. `chaos` kills one worker with `SIGKILL` halfway through the load (minute 5 of 10) and waits for Compose to restart it.
 5. `verify` waits for the queue to drain, then checks that Mongo holds every event that got `202`, no `dedupKey` repeats, and each patient's events finished in `ts` order.
 

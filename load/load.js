@@ -2,7 +2,9 @@ import http from 'k6/http';
 import { Counter } from 'k6/metrics';
 
 const API_URL = __ENV.API_URL || 'http://api:3000';
-const PATIENTS = 5000;
+// ~2 events/min per patient: with the 30 s ts jitter, about 1 event in 8 arrives after a later one
+// (5,000 patients gave 1 in 80). Stays under the 12 events/min one patient can take.
+const PATIENTS = 500;
 const TYPES = ['heart_rate', 'blood_pressure', 'temperature'];
 const DUPLICATE_RATE = 0.1;
 const MAX_TS_JITTER_MS = 30_000;
