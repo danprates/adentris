@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { Types } from 'mongoose';
+import { mongo, Types } from 'mongoose';
 import { patientRef } from '../src/common/patient-ref';
 import { EventsService } from '../src/events/events.service';
 import request, { Response } from 'supertest';
@@ -241,6 +241,27 @@ describe('POST /events (e2e)', () => {
         error: 'boom',
       });
     });
+  });
+
+  it('logs a Mongo server error without its message or stack', async () => {
+    jest.spyOn(app.get(EventsService), 'create').mockRejectedValueOnce(
+      new mongo.MongoServerError({
+        message: 'E11000 dup key: { patientId: "p-secret" }',
+        code: 11000,
+      }),
+    );
+    const logs = captureLogs();
+    try {
+      await post(validEvent()).expect(500);
+
+      expect(logs.wideEvents()[0]).toMatchObject({
+        status: 500,
+        error: 'MongoServerError 11000',
+      });
+      expect(JSON.stringify(logs.lines())).not.toContain('p-secret');
+    } finally {
+      logs.restore();
+    }
   });
 
   it('creates the four planned indexes', async () => {

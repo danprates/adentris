@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Observable, catchError, tap, throwError } from 'rxjs';
-import { errorMessage } from './errors';
+import { errorMessage, isMongoServerError } from './errors';
 import { patientRef } from './patient-ref';
 
 // Handlers add their own fields here; the response body stays the API contract, not a log feed.
@@ -53,7 +53,9 @@ export class WideEventInterceptor implements NestInterceptor {
           status: http ? err.getStatus() : 500,
           durationMs: durationMs(),
           error: logMessage(err),
-          stack: http ? undefined : (err as Error)?.stack,
+          // The stack starts with the message, so a Mongo server error gets none (see errorMessage).
+          stack:
+            http || isMongoServerError(err) ? undefined : (err as Error)?.stack,
         });
         // Nest's exception filter logs unknown errors again; an HttpException keeps it to this one line.
         return throwError(() =>
