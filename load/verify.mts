@@ -139,6 +139,9 @@ async function final(events: Events): Promise<boolean> {
     .toArray();
 
   const checks = {
+    // A run where nothing was accepted, or where requests failed, proves nothing about the data.
+    noneAccepted: acceptedNew === 0 ? 1 : 0,
+    failedRequests,
     // Every 202 id must be stored; the log must hold all of them, or the check would be incomplete.
     lost: lost.length,
     idsNotLogged: acceptedNew - acceptedIds.length,
@@ -150,7 +153,6 @@ async function final(events: Events): Promise<boolean> {
   };
   const report = {
     acceptedNew,
-    failedRequests,
     total,
     done: s.done,
     failed: s.failed,
