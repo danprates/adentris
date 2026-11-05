@@ -103,14 +103,18 @@ export class ProcessingService implements OnModuleInit {
         const claimed = await this.events
           .findOneAndUpdate(
             { _id: head._id, status: 'pending' },
-            {
-              $set: {
-                status: 'processing',
-                leaseOwner: this.workerId,
-                leaseUntil: new Date(now.getTime() + this.config.leaseMs),
+            // $$NOW is Mongo's clock: the reaper compares against the same one, so worker clock skew cannot
+            // expire a live lease early. Cost: a pipeline update instead of plain $set/$inc.
+            [
+              {
+                $set: {
+                  status: 'processing',
+                  leaseOwner: this.workerId,
+                  leaseUntil: { $add: ['$$NOW', this.config.leaseMs] },
+                  attempts: { $add: ['$attempts', 1] },
+                },
               },
-              $inc: { attempts: 1 },
-            },
+            ],
             { new: true },
           )
           .lean();

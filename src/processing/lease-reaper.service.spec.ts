@@ -10,8 +10,6 @@ describe('LeaseReaperService', () => {
   });
 
   it('3.U3 only touches processing events whose lease has expired', async () => {
-    const now = new Date('2026-11-03T08:00:00Z');
-    jest.useFakeTimers({ now });
     const updateMany = jest.fn().mockResolvedValue({ modifiedCount: 0 });
     const reaper = new LeaseReaperService(
       { updateMany } as unknown as Model<Event>,
@@ -23,7 +21,7 @@ describe('LeaseReaperService', () => {
 
     expect(updateMany).toHaveBeenCalledTimes(1);
     expect(updateMany).toHaveBeenCalledWith(
-      { status: 'processing', leaseUntil: { $lt: now } },
+      { status: 'processing', $expr: { $lt: ['$leaseUntil', '$$NOW'] } },
       expect.anything(),
     );
   });

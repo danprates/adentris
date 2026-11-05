@@ -468,4 +468,58 @@ describe('Failure handling (e2e)', () => {
     await insert();
     await waitFor(() => statusIs('E1', 'done'), 10_000);
   }, 30_000);
+
+  // Fakes only Date, so the worker's clock runs ahead of Mongo's while its timers and I/O stay real.
+  const workerClockAhead = (ms: number) =>
+    jest.useFakeTimers({
+      now: Date.now() + ms,
+      advanceTimers: true,
+      doNotFake: [
+        'hrtime',
+        'nextTick',
+        'performance',
+        'queueMicrotask',
+        'setImmediate',
+        'clearImmediate',
+        'setInterval',
+        'clearInterval',
+        'setTimeout',
+        'clearTimeout',
+      ],
+    });
+
+  it('does not reap a live lease when the worker clock runs ahead', async () => {
+    await insert({
+      status: 'processing',
+      leaseOwner: 'other-worker',
+      attempts: 1,
+      leaseUntil: new Date(Date.now() + 30_000),
+    });
+    workerClockAhead(60_000);
+    try {
+      await startWorker({ env: FAST });
+      // FAST runs the reaper every 50ms: several ticks.
+      await sleep(300);
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(await find('E1')).toMatchObject({ status: 'processing' });
+  });
+
+  it("sets the lease from Mongo's clock, not the worker's", async () => {
+    await insert();
+    workerClockAhead(60 * 60_000);
+    try {
+      await startWorker({ external: flakyExternal(() => false, 2000) });
+      await waitFor(() => statusIs('E1', 'processing'));
+    } finally {
+      jest.useRealTimers();
+    }
+
+    const leaseUntil = (await find('E1'))?.leaseUntil as Date;
+    expect(Math.abs(leaseUntil.getTime() - (Date.now() + 30_000))).toBeLessThan(
+      5_000,
+    );
+  });
 });

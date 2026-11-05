@@ -48,7 +48,8 @@ export class LeaseReaperService
   async reap(): Promise<void> {
     try {
       const { modifiedCount } = await this.events.updateMany(
-        { status: 'processing', leaseUntil: { $lt: new Date() } },
+        // Mongo's clock, the one the claim set the lease with (see ProcessingService.claim).
+        { status: 'processing', $expr: { $lt: ['$leaseUntil', '$$NOW'] } },
         [
           {
             $set: {
