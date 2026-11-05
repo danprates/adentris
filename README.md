@@ -152,6 +152,7 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
 
 - **The dedup key is the event's content.** The payload has no id, so the **dedup key** is a SHA-256 of `patientId`, `type`, `ts` and `data`, with object keys sorted and array order kept. A unique index stores a resent event once, also when 10 copies arrive at the same moment, and the api answers the copy `200` with the original's `id` and status. Cost: two events that are truly identical become one. `src/events/dedup-key.ts`
 - **`ts` becomes a UTC `Date`.** `10:00+02:00` and `08:00Z` are the same instant, so they give the same dedup key and the same order. The api rejects a `ts` without a timezone offset with `400`, because it does not name one instant. `src/events/dto/create-event.dto.ts`
+- **A near-duplicate counts twice.** If a sender changes one field when it resends (for example a `data.sentAt` with the send time), the content differs, so the dedup key differs and the api stores 2 events. Nothing in the payload tells a resend from a new reading. Cost: that sender's events count twice, and both are processed. `src/events/dedup-key.ts`
 - **A resent `failed` event stays `failed`.** The api answers it as a duplicate and does not queue it again; an operator requeues it on purpose (see [Operations](#operations)). `src/events/events.service.ts`
 
 ### Events arrive out of order, and state depends on their sequence
@@ -165,6 +166,7 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
   - Only `done` events are reprocessed; `failed` events wait for an operator.
   - No transaction is needed: the worker holds the per-patient lock, and if a crash cuts the reprocess short, the late event's next claim repeats it.
   - Cost: extra external calls (load test at 10,000 events/min: 10,674 reprocesses for 90,178 events), and the new processing run overwrites the old `result`.
+  - No cap on how many events one late event reprocesses. The `ts` window limits it to 7 days of the patient's events: for a patient with 1 event/min, a 7-day-old event reprocesses 10,080 events, ~14 h with the patient held at 12 events/min.
 
 ### An event may never be lost or counted twice
 
@@ -221,9 +223,11 @@ PHI is health data that identifies a patient. Under HIPAA, every system that sto
 | We accept                              | What it costs                                                                      | When it shows                                                                                        |
 | -------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Content is the dedup key               | Two truly identical events become one                                              | A sender emits the same reading twice at the same `ts`                                               |
+| Content is the dedup key               | A resend with one changed field counts twice                                       | A sender adds a send time or a retry count when it resends                                           |
 | Order by the sender's clock (C1)       | Wrong order, not detected                                                          | A sender's clock runs ahead                                                                          |
 | One event per patient at a time        | At most 12 events/min per patient; the rest queue                                  | One patient sends faster than that                                                                   |
 | Reprocess later events (Option C)      | Extra external calls; the old `result` is overwritten                              | Many events arrive late (load test at 10,000/min: 10,674 reprocesses for 90,178 events)              |
+| No cap on one reprocess                | Up to 7 days of a patient's events run again; the patient waits                    | An event arrives days late                                                                           |
 | New idempotency key per reprocess (A1) | The external system must "recompute and replace"                                   | The external system sums results per key                                                             |
 | One external call per event, 5 s each  | The external system holds ~85 concurrent calls at 1,000 events/min, ~834 at 10,000 | Always                                                                                               |
 | `failed` does not block the patient    | Later events run without the failed one                                            | Until an operator requeues it                                                                        |
@@ -282,6 +286,8 @@ docker compose exec mongo mongosh ingest --eval '
 - **Metrics and alerts** (Prometheus): queue size, age of the oldest pending event, slots in use, external error rate. Today the wide-event logs and `npm run verify` show this.
 - **Autoscaling of workers** on the age of the oldest pending event, so a backlog drains faster than the spare capacity allows (20% above the load at 10,000 events/min).
 - **A history of results per reprocess.** Today a reprocess overwrites `result`, and `attempts` counts only the current processing run.
+- **An optional `Idempotency-Key` header from the sender**, used as the dedup key when present, so a resend with a changed field counts once.
+- **A cap or an alert on large reprocesses**, for example when one late event sends more than 100 events back.
 - **A check on the sender's clock (C1)**, for example a flag on events whose `ts` is ahead of `receivedAt`.
 - **An archiving policy.** Clinical data is not deleted, and 1,000 events/min is 1.44 million documents per day.
 - **Batch inserts** (`insertMany`) per short request window, if the per-insert journal wait limits the api.

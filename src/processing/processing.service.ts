@@ -199,7 +199,8 @@ export class ProcessingService implements OnModuleInit {
   }
 
   // Option C: a result depends on the events before it, so a late event sends the later done ones back
-  // to the queue and the head claim redoes them in ts order. Cost: extra external calls.
+  // to the queue and the head claim redoes them in ts order. Cost: extra external calls, with no cap; the
+  // api's 7-day ts window bounds one reprocess.
   // Safe without a transaction: we hold the patient's lock, and if a crash cuts the updateMany short,
   // the late event's next claim runs it again and resets the rest.
   private async resetLater(event: ClaimedEvent): Promise<number> {
