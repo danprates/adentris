@@ -11,6 +11,9 @@ import { ProcessingModule } from './processing/processing.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         uri: config.getOrThrow<string>('MONGO_URI'),
+        // A stalled Mongo would hold the claim's await forever and freeze the dispatch loop; this makes it throw,
+        // so the loop logs and retries. Cost: a query slower than 5 s fails, and the reaper takes the event back.
+        timeoutMS: 5_000,
       }),
     }),
     ScheduleModule.forRoot(),

@@ -445,4 +445,27 @@ describe('Failure handling (e2e)', () => {
     expect(await events().countDocuments({ status: 'failed' })).toBe(1);
     expect(await events().countDocuments()).toBe(1);
   });
+
+  it('keeps the claim loop alive when Mongo stalls', async () => {
+    const external = flakyExternal(() => false);
+    await startWorker({ external });
+    const logs = captureLogs();
+    execSync('docker compose pause mongo', { stdio: 'ignore' });
+    try {
+      // Without a timeout the claim waits on the stalled socket and the loop never logs.
+      await waitFor(
+        () =>
+          logs
+            .lines()
+            .some((line) => String(line.message).startsWith('claim failed')),
+        10_000,
+      );
+    } finally {
+      execSync('docker compose unpause mongo', { stdio: 'ignore' });
+      logs.restore();
+    }
+
+    await insert();
+    await waitFor(() => statusIs('E1', 'done'), 10_000);
+  }, 30_000);
 });
