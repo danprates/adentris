@@ -18,7 +18,9 @@ Runs A–C used 17 events/s = 1,020 events/min. The load test now sends exactly 
 | Host load average                            | 1.7–2.9                         | 2.6–5.2                          | 3.0–6.5                         |
 | `verify --final`                             | PASS                            | PASS                             | PASS                            |
 
-Every final verify: documents = `accepted_new`, 0 lost, 0 pending, 0 failed, 0 duplicate `dedupKey`, 0 out of order. About 135 events per run arrived after an event with a later `ts` and sent about 133 done events back to the queue. The killed worker was back in 1 s. Its in-flight events wait for the lease to expire and the reaper to run, which is why the oldest pending event reached 37 s in run C. Run C's 1.5 s max came while the host load was at its highest (6.5).
+Run D (after the load test moved to 500 patients and chaos to the middle of the run): 10,001 requests, 9,036 `accepted_new`, 965 duplicates; k6 p99 9.6 ms, max 168 ms; 0 failed requests; `verify --final` PASS with 0 failed events; 1,147 events arrived after a later one of their patient and caused 1,090 reprocess runs.
+
+Every final verify of runs A–C: documents = `accepted_new`, 0 lost, 0 pending, 0 failed, 0 duplicate `dedupKey`, 0 out of order. About 135 events per run arrived after an event with a later `ts` and sent about 133 done events back to the queue. The killed worker was back in 1 s. Its in-flight events wait for the lease to expire and the reaper to run, which is why the oldest pending event reached 37 s in run C. Run C's 1.5 s max came while the host load was at its highest (6.5).
 
 Run it:
 

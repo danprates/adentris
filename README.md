@@ -26,7 +26,7 @@ The command runs these steps in order:
 
 1. It starts Mongo, the api and 2 workers, and waits until Mongo and the api pass their health checks.
 2. `reset` deletes every event in the `ingest` database.
-3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes: events for 500 patients, 10% of them resent byte for byte, each `ts` up to 30 s in the past so a patient's events arrive out of order. With 500 patients, about 1 event in 8 arrives after a later one of its patient and reprocesses it (2-min run: 226 of 1,807 events); 5,000 patients gave 1 in 80. It prints `✓` or `✗` for `p99 < 100 ms`.
+3. `k6` sends 1,000 events/min (the assignment load) for 10 minutes: events for 500 patients, 10% of them resent byte for byte, each `ts` up to 30 s in the past so a patient's events arrive out of order. With 500 patients, about 1 event in 8 arrives after a later one of its patient and reprocesses it (10-min run D: 1,147 of 9,036 events); 5,000 patients gave 1 in 80. It prints `✓` or `✗` for `p99 < 100 ms`.
 4. `chaos` kills one worker with `SIGKILL` halfway through the load (minute 5 of 10) and waits for Compose to restart it.
 5. `verify` waits for the queue to drain, then checks that at least one event got `202` and no request failed, that Mongo holds every event that got `202`, none ended `failed`, no `dedupKey` repeats, and each patient's events finished in `ts` order. It checks when each event's last run finished, not the results: the fake external system keeps no state, so no result shows which events it saw. The e2e tests cover that side with a spy on the external calls: one call per patient at a time (`test/processing.e2e-spec.ts`), and after a late event every later event is called again in `ts` order (`test/late-arrivals.e2e-spec.ts`).
 
@@ -39,8 +39,9 @@ Measured on one laptop (Docker VM with 8 vCPU), with CPU caps in compose so the 
 | Load                       | POST p99 (k6)        | Failed requests | `verify --final`                           |
 | -------------------------- | -------------------- | --------------- | ------------------------------------------ |
 | 1,000 events/min, runs A–C | 8.0 / 10.9 / 15.2 ms | 0               | PASS: 0 lost, 0 duplicated, 0 out of order |
+| 1,000 events/min, run D    | 9.6 ms               | 0               | PASS: also 0 failed                        |
 
-In runs A–C the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
+Runs A–C used 5,000 patients and run D the current 500. In runs A–C the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
 A load run found a bug: the query that picks the next event filled its batch with busy patients (patients that already have an event in processing), and the queue grew without limit. The fix leaves busy patients out of the batch.
 [`load/RESULTS.md`](load/RESULTS.md) has every run and what the load runs found and changed.
 
@@ -166,7 +167,7 @@ Each decision below names the trade-off it accepts ("Cost:") and has a matching 
   - An equal `ts` is not late, and a new event with a higher `ts` reprocesses nothing.
   - Only `done` events are reprocessed; `failed` events wait for an operator.
   - No transaction is needed: the worker holds the per-patient lock, and if a crash cuts the reprocess short, the late event's next claim repeats it.
-  - Cost: extra external calls (about 133 per 10-min run at 1,000 events/min), and the new processing run overwrites the old `result`.
+  - Cost: extra external calls (about 1,090 per 10-min run at 1,000 events/min with 500 patients, run D), and the new processing run overwrites the old `result`.
   - No cap on how many events one late event reprocesses. The `ts` window limits it to 7 days of the patient's events: for a patient with 1 event/min, a 7-day-old event reprocesses 10,080 events, ~14 h with the patient held at 12 events/min.
 
 ### An event may never be lost or counted twice
@@ -198,7 +199,7 @@ Each decision below names the trade-off it accepts ("Cost:") and has a matching 
 
 ### Traffic is 1,000 events/min for hours and will grow
 
-Capacity is 2 workers × 500 slots ÷ 5 s = 200 events/s = 12,000 events/min.
+In theory capacity is 2 workers × 500 slots ÷ 5 s = 200 events/s = 12,000 events/min. No run measured it after the claim caches were removed, and each worker claims one event at a time, so the real limit may be lower.
 At 1,000 events/min about 85 events are in processing (measured: 78–79 on average).
 Each retry repeats the 5 s call and holds a slot, so many external failures use up the slots: at 10,000 events/min with 20% of calls failing, 990 of the 1,000 slots were in use.
 Workers scale by replicas: `docker compose up -d --scale worker=4`.
@@ -206,7 +207,7 @@ Workers scale by replicas: `docker compose up -d --scale worker=4`.
 - **No backlog limit at the door.** The api accepts every valid event while Mongo writes. `src/events/events.service.ts`
   - Why: refusing would push the load back to the senders and trigger mass retries.
   - Cost: during a worker outage the queue grows, and it drains only at the spare capacity.
-  - In theory, with every worker down for 10 min, the queue drains in about 1 min at 1,000 events/min (183 spare events/s). One patient drains at most 12 events/min.
+  - In theory, with every worker down for 10 min, the 10,000 queued events need about 1 min of spare capacity (183 events/s). But one patient drains at most 12 events/min: with the load test's 500 patients, each has 20 queued events (100 s one at a time) while new ones keep coming, so the queue drains in about 2 min.
 - **One dispatch loop and a counter, not 500 polling loops.** An empty queue costs 1 query/s per worker. Cost: claims run one at a time per worker, so more throughput needs more replicas. `src/processing/worker.service.ts`
 
 ### Patient data is PHI
