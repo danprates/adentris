@@ -7,8 +7,8 @@ export interface DedupInput {
   data: Record<string, unknown>;
 }
 
-// The payload has no id, so the content is the key: two truly identical events become one.
-// Cost: a resend with one changed field (a send time, a retry count) has a new key and counts twice.
+// The payload has no id, so the content is the key. Cost: identical events become one (also 2 equal readings in
+// 1 s when ts has whole seconds), and a resend with one changed field (a send time) counts twice.
 export function dedupKey({ patientId, type, ts, data }: DedupInput): string {
   const canonical = JSON.stringify(
     { patientId, type, ts, data },
