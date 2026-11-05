@@ -3,6 +3,7 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, mongo, Types } from 'mongoose';
+import { patientRef } from '../common/patient-ref';
 import { Event } from '../events/schemas/event.schema';
 import { ExternalProcessorService } from './external-processor.service';
 import { processingConfig } from './processing.config';
@@ -135,7 +136,7 @@ export class ProcessingService implements OnModuleInit {
   async handle(event: ClaimedEvent): Promise<void> {
     const wideEvent: Record<string, unknown> = {
       eventId: event._id.toString(),
-      patientId: event.patientId,
+      patientRef: patientRef(event.patientId),
       attempt: event.attempts,
     };
     // A failed write leaves the event in processing until its lease expires; the reaper counts it as an attempt.

@@ -25,6 +25,8 @@ services:
     environment:
       MONGO_URI: mongodb://mongo:27017/ingest
       PORT: 3000
+      # shortcut: a dev key in the file; production injects its own secret, the same for api and worker.
+      LOG_HASH_KEY: ${LOG_HASH_KEY:-dev-only-log-hash-key}
     # The api keeps no state, so a crashed one comes back on its own; senders retry what it dropped.
     restart: unless-stopped
     healthcheck:
@@ -43,6 +45,7 @@ services:
     cpus: 0.5
     environment:
       MONGO_URI: mongodb://mongo:27017/ingest
+      LOG_HASH_KEY: ${LOG_HASH_KEY:-dev-only-log-hash-key}
     deploy:
       replicas: 2
     restart: unless-stopped

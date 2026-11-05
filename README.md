@@ -138,7 +138,8 @@ When no event is ready, or all 500 slots are in use, the loop waits until a runn
 ### Logs
 
 Each request and each processed event writes one JSON log line at the end, with all its context ("wide event").
-A request line has the route, status, duration, `patientId`, event id, `dedupKey` and `duplicate`.
+A request line has the route, status, duration, `patientRef`, event id, `dedupKey` and `duplicate`.
+A processing line has `patientRef` too: a keyed hash of `patientId` (see [Patient data](#patient-data-is-phi)).
 A processing line has the attempt, the outcome (`done`, `retry`, `failed`, `lease_lost`, `write_failed`), the external call time, and `late` and `reprocessed` for late events.
 `GET /health` checks that Mongo answers.
 
@@ -206,6 +207,15 @@ Workers scale by replicas: `docker compose up -d --scale worker=4`.
   - Cost: a patient that became free or ready can wait up to 200 ms, and a patient that another worker claimed meanwhile costs 1 wasted head lookup.
 - **CPU caps in compose (3.5 of 8 cores).** Mongo 1.5, api 0.5, each worker 0.5, k6 0.5. On a shared laptop they keep the load numbers repeatable. `docker-compose.yml`
 
+### Patient data is PHI
+
+PHI is health data that identifies a patient. Under HIPAA, every system that stores it needs a BAA (the HIPAA contract with the vendor), and a log aggregator is one of those systems.
+
+- **Logs carry `patientRef`, not `patientId`.** `patientRef` is the first 16 hex characters of an HMAC-SHA256 of `patientId`, keyed by `LOG_HASH_KEY`. One patient's lines still match, and the id stays out of the logs. A plain SHA-256 would not be enough: patient ids are often guessable, and anyone can hash every candidate and compare. The api and the worker refuse to boot without the key. Cost: to find one patient's lines, an operator computes the ref with the key. `src/common/patient-ref.ts`
+- **`data` never goes to the logs.** It holds the clinical payload.
+- **`patientId` stays in Mongo in plain text.** The worker needs it for the per-patient lock and the order. Encryption at rest and access control belong to the Mongo deployment, not to this service.
+- **The compose file ships a dev key.** Production injects its own secret, the same one for api and worker.
+
 ## Trade-offs
 
 | We accept                              | What it costs                                                                      | When it shows                                                                                        |
@@ -258,6 +268,7 @@ docker compose exec mongo mongosh ingest --eval '
 | --------------------- | --------------- | ------------------------------------------------------ |
 | `MONGO_URI`           | none (required) | Mongo connection string                                |
 | `PORT`                | `3000`          | api port                                               |
+| `LOG_HASH_KEY`        | none (required) | Key of the `patientId` hash in logs                    |
 | `WORKER_CONCURRENCY`  | `500`           | Events in processing per worker                        |
 | `LEASE_MS`            | `30000`         | Lease length                                           |
 | `EXTERNAL_TIMEOUT_MS` | `10000`         | External call timeout; must be lower than `LEASE_MS`   |

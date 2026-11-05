@@ -2,8 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { createAdapter, setupApp } from './app.setup';
+import { logHashKey } from './common/patient-ref';
 
 async function bootstrap() {
+  logHashKey();
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     createAdapter(),

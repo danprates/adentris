@@ -3,6 +3,7 @@ import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { TestingModule } from '@nestjs/testing';
 import { Model, Types } from 'mongoose';
 import request from 'supertest';
+import { patientRef } from '../src/common/patient-ref';
 import { Event } from '../src/events/schemas/event.schema';
 import { ExternalInput } from '../src/processing/external-processor.service';
 import {
@@ -362,7 +363,7 @@ describe('Event processing (e2e)', () => {
       expect(lines).toHaveLength(1);
       expect(lines[0]).toEqual({
         eventId: doc._id.toString(),
-        patientId: 'p-1',
+        patientRef: patientRef('p-1'),
         attempt: 1,
         externalMs: expect.any(Number) as number,
         outcome: 'done',

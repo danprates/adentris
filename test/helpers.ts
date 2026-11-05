@@ -83,7 +83,7 @@ export interface WideEvent {
   route: string;
   status: number;
   durationMs: number;
-  patientId?: string;
+  patientRef?: string;
   eventId?: string;
   dedupKey?: string;
   duplicate?: boolean;

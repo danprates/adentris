@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Observable, catchError, tap, throwError } from 'rxjs';
+import { patientRef } from './patient-ref';
 
 // Handlers add their own fields here; the response body stays the API contract, not a log feed.
 export type WideEventRequest = FastifyRequest & {
@@ -31,7 +32,7 @@ export class WideEventInterceptor implements NestInterceptor {
     const base = {
       method: req.method,
       route: req.routeOptions.url,
-      patientId: body?.patientId,
+      patientRef: patientRef(body?.patientId),
     };
     const durationMs = () => Math.round(performance.now() - start);
 

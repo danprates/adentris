@@ -1,6 +1,7 @@
 import { execSync } from 'node:child_process';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Types } from 'mongoose';
+import { patientRef } from '../src/common/patient-ref';
 import { EventsService } from '../src/events/events.service';
 import request, { Response } from 'supertest';
 import {
@@ -176,7 +177,7 @@ describe('POST /events (e2e)', () => {
         method: 'POST',
         route: '/events',
         status: 202,
-        patientId: 'p-1',
+        patientRef: patientRef('p-1'),
         eventId: bodyOf(res).id,
         dedupKey: doc?.dedupKey as string,
         duplicate: false,
