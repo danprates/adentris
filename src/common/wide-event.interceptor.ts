@@ -68,7 +68,9 @@ function errorMessage(err: unknown): string {
     const res = err.getResponse();
     const message =
       typeof res === 'string' ? res : (res as { message?: unknown }).message;
-    return Array.isArray(message) ? message.join('; ') : String(message);
+    if (Array.isArray(message)) return message.join('; ');
+    // Some responses carry no message (terminus puts the check results in the body).
+    return typeof message === 'string' ? message : err.message;
   }
   return err instanceof Error ? err.message : String(err);
 }
