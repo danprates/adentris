@@ -261,3 +261,4 @@ The worker treats it as a late event: it reprocesses the patient's `done` events
 - **A wide event for requests that Fastify rejects before Nest** (malformed JSON, `413`, `404`). Today those get no log line.
 - **A liveness check for the worker.** The dispatch loop would write a heartbeat every few seconds, and Kubernetes would restart a worker whose heartbeat is older than 30 s. Today a loop stuck on something other than Mongo (which times out after 5 s) leaves the container running and idle. Compose does not restart unhealthy containers, so it would not help here.
 - **An endpoint or script for requeueing**, instead of a `mongosh` update.
+- **Index changes outside the boot.** The api and the worker create missing indexes at boot (`init()`) and wait for them. A new index on a large collection would hold every pod's boot; production would build it with `createIndexes` before the deploy.
