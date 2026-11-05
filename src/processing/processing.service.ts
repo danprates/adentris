@@ -76,7 +76,9 @@ export class ProcessingService implements OnModuleInit {
       try {
         const claimed = await this.events
           .findOneAndUpdate(
-            { _id: head._id, status: 'pending' },
+            // availableAt again: another worker may fail the head between the lookup and this write, and
+            // its retry must wait out the backoff. Cost: an event that turns ready mid-claim waits one loop.
+            { _id: head._id, status: 'pending', availableAt: { $lte: now } },
             // $$NOW is Mongo's clock: the reaper compares against the same one, so worker clock skew cannot
             // expire a live lease early. Cost: a pipeline update instead of plain $set/$inc.
             [

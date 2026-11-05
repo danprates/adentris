@@ -1,11 +1,13 @@
-import { getModelToken } from '@nestjs/mongoose';
+import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { TestingModule } from '@nestjs/testing';
-import { Model, Types } from 'mongoose';
+import { Test, TestingModule } from '@nestjs/testing';
+import { Connection, Model, Types } from 'mongoose';
 import request from 'supertest';
 import { patientRef } from '../src/common/patient-ref';
 import { Event } from '../src/events/schemas/event.schema';
 import { ExternalInput } from '../src/processing/external-processor.service';
+import { ProcessingService } from '../src/processing/processing.service';
+import { WorkerModule } from '../src/worker.module';
 import {
   captureLogs,
   clearEvents,
@@ -370,6 +372,40 @@ describe('Event processing (e2e)', () => {
     await waitFor(() => allDone(2));
 
     expect(order).toEqual(['H1', 'H1', 'H1', 'H1', 'H2']);
+  });
+
+  it('does not claim a head that another worker failed between the lookup and the claim', async () => {
+    // Not initialized, so no dispatch loop runs: the test calls claim() itself.
+    const moduleRef = await Test.createTestingModule({
+      imports: [WorkerModule],
+    }).compile();
+    try {
+      const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
+      const workerModel = moduleRef.get<Model<Event>>(
+        getModelToken(Event.name),
+      );
+      const findOneAndUpdate = workerModel.findOneAndUpdate.bind(workerModel);
+      // Another worker fails the head right before this claim writes: it waits 2s for its retry.
+      jest.spyOn(workerModel, 'findOneAndUpdate').mockImplementationOnce(((
+        ...args: Parameters<typeof findOneAndUpdate>
+      ) => ({
+        lean: async () => {
+          await events().updateOne(
+            { _id: doc._id },
+            { $set: { availableAt: new Date(Date.now() + 2000), attempts: 1 } },
+          );
+          return findOneAndUpdate(...args).lean();
+        },
+      })) as unknown as typeof findOneAndUpdate);
+
+      expect(await moduleRef.get(ProcessingService).claim()).toBeNull();
+      expect((await events().findOne({ _id: doc._id }))?.status).toBe(
+        'pending',
+      );
+    } finally {
+      // close() would run shutdown hooks of a module that never started.
+      await moduleRef.get<Connection>(getConnectionToken()).close();
+    }
   });
 
   it('logs one wide event per processed event', async () => {
