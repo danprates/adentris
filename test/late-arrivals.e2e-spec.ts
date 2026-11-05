@@ -119,7 +119,7 @@ describe('Late arrivals (e2e)', () => {
     await Promise.all(workers.map((worker) => worker.close()));
   });
 
-  it('4.1 reprocesses the later events when a late event arrives', async () => {
+  it('reprocesses the later events when a late event arrives', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E2', 5).expect(202);
@@ -133,7 +133,7 @@ describe('Late arrivals (e2e)', () => {
     expect(await isDone('E1')).toBe(true);
   });
 
-  it('4.2 does not reprocess anything for a newer event', async () => {
+  it('does not reprocess anything for a newer event', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E1', 0).expect(202);
@@ -149,7 +149,7 @@ describe('Late arrivals (e2e)', () => {
     );
   });
 
-  it('4.3 does not count an equal ts as late', async () => {
+  it('does not count an equal ts as late', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E1', 0).expect(202);
@@ -161,7 +161,7 @@ describe('Late arrivals (e2e)', () => {
     expect(external.names()).toEqual(['E1', 'E1b']);
   });
 
-  it('4.4 makes a late event wait while the patient is busy', async () => {
+  it('makes a late event wait while the patient is busy', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
     const external = spyExternal({
@@ -180,7 +180,7 @@ describe('Late arrivals (e2e)', () => {
     expect(external.names()).toEqual(['E2', 'E1', 'E2']);
   });
 
-  it('4.5 reprocesses once for two late events that arrive together', async () => {
+  it('reprocesses once for two late events that arrive together', async () => {
     const external = spyExternal();
     const worker = await startWorker({ external });
     await post('E3', 10).expect(202);
@@ -196,7 +196,7 @@ describe('Late arrivals (e2e)', () => {
     expect(external.names()).toEqual(['E3', 'E1', 'E2', 'E3']);
   });
 
-  it('4.6 reprocesses again for each late event in sequence', async () => {
+  it('reprocesses again for each late event in sequence', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E3', 10).expect(202);
@@ -219,7 +219,7 @@ describe('Late arrivals (e2e)', () => {
     );
   });
 
-  it('4.7 reprocesses only the late event patient', async () => {
+  it('reprocesses only the late event patient', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E2', 5).expect(202);
@@ -233,7 +233,7 @@ describe('Late arrivals (e2e)', () => {
     expect(await isDone('E9')).toBe(true);
   });
 
-  it('4.8 reprocesses every later event of a very old late event, in ts order', async () => {
+  it('reprocesses every later event of a very old late event, in ts order', async () => {
     const external = spyExternal();
     await startWorker({ external });
     const later = Array.from({ length: 50 }, (_, i) => `L${i + 1}`);
@@ -259,7 +259,7 @@ describe('Late arrivals (e2e)', () => {
     expect(await isDone('E0')).toBe(true);
   }, 30_000);
 
-  it('4.9 leaves a later failed event alone', async () => {
+  it('leaves a later failed event alone', async () => {
     const external = spyExternal();
     await insert('E2', 5, { status: 'failed', attempts: 5, error: 'boom' });
     await startWorker({ external });
@@ -275,7 +275,7 @@ describe('Late arrivals (e2e)', () => {
     expect(failed?.reprocessCount).toBe(0);
   });
 
-  it('4.10 does not reprocess for a duplicate of an old event', async () => {
+  it('does not reprocess for a duplicate of an old event', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E1', 0).expect(202);
@@ -290,7 +290,7 @@ describe('Late arrivals (e2e)', () => {
     expect(await events().countDocuments()).toBe(2);
   });
 
-  it('4.11 does not repeat the reset when the late event retries', async () => {
+  it('does not repeat the reset when the late event retries', async () => {
     const external = spyExternal({
       fails: (name, call) => name === 'E1' && call === 1,
     });
@@ -305,7 +305,7 @@ describe('Late arrivals (e2e)', () => {
     expect((await find('E1'))?.attempts).toBe(2);
   });
 
-  it('4.12 finishes a reset cut short by a crash', async () => {
+  it('finishes a reset cut short by a crash', async () => {
     const external = spyExternal();
     // The worker died mid-updateMany: E2 went back to pending, E3 is still done.
     await insert('E1', 0);
@@ -321,7 +321,7 @@ describe('Late arrivals (e2e)', () => {
     expect(external.names()).toEqual(['E1', 'E2', 'E3']);
   });
 
-  it('4.13 treats a failed event put back in the queue as late', async () => {
+  it('treats a failed event put back in the queue as late', async () => {
     const external = spyExternal();
     await insert('E1', 0, { status: 'failed', attempts: 5, error: 'boom' });
     await insert('E2', 5, { status: 'done', attempts: 1 });
@@ -339,7 +339,7 @@ describe('Late arrivals (e2e)', () => {
     expect(external.names()).toEqual(['E1', 'E2']);
   });
 
-  it('4.14 marks the wide event of a late event', async () => {
+  it('marks the wide event of a late event', async () => {
     const logs = captureLogs();
     try {
       const external = spyExternal();
@@ -370,7 +370,7 @@ describe('Late arrivals (e2e)', () => {
     }
   });
 
-  it('4.15 reprocesses with a new idempotency key and keeps one document', async () => {
+  it('reprocesses with a new idempotency key and keeps one document', async () => {
     const external = spyExternal();
     await startWorker({ external });
     await post('E2', 5).expect(202);

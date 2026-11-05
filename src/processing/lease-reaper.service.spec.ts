@@ -9,7 +9,7 @@ describe('LeaseReaperService', () => {
     jest.useRealTimers();
   });
 
-  it('3.U3 only touches processing events whose lease has expired', async () => {
+  it('only touches processing events whose lease has expired', async () => {
     const updateMany = jest.fn().mockResolvedValue({ modifiedCount: 0 });
     const reaper = new LeaseReaperService(
       { updateMany } as unknown as Model<Event>,

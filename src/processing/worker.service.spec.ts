@@ -53,7 +53,7 @@ describe('WorkerService', () => {
     jest.restoreAllMocks();
   });
 
-  it('2.U1 keeps at most `concurrency` handles in flight', async () => {
+  it('keeps at most `concurrency` handles in flight', async () => {
     claim.mockResolvedValue(event);
     handle.mockReturnValue(new Promise(() => undefined));
     start(3);
@@ -64,7 +64,7 @@ describe('WorkerService', () => {
     expect(claim).toHaveBeenCalledTimes(3);
   });
 
-  it('2.U2 claims again when a handle finishes', async () => {
+  it('claims again when a handle finishes', async () => {
     const first = deferred();
     claim.mockResolvedValue(event);
     handle
@@ -81,7 +81,7 @@ describe('WorkerService', () => {
     expect(handle).toHaveBeenCalledTimes(4);
   });
 
-  it('2.U3 polls an empty queue once per second', async () => {
+  it('polls an empty queue once per second', async () => {
     claim.mockResolvedValue(null);
     start();
 
@@ -93,7 +93,7 @@ describe('WorkerService', () => {
     expect(handle).not.toHaveBeenCalled();
   });
 
-  it('2.U4 frees the slot when a handle throws', async () => {
+  it('frees the slot when a handle throws', async () => {
     claim.mockResolvedValue(event);
     handle
       .mockRejectedValueOnce(new Error('boom'))
@@ -105,7 +105,7 @@ describe('WorkerService', () => {
     expect(handle).toHaveBeenCalledTimes(2);
   });
 
-  it('2.U5 survives a claim error and processes the event on retry', async () => {
+  it('survives a claim error and processes the event on retry', async () => {
     claim
       .mockRejectedValueOnce(new Error('mongo down'))
       .mockResolvedValueOnce(event)
@@ -120,7 +120,7 @@ describe('WorkerService', () => {
     expect(handle).toHaveBeenCalledWith(event);
   });
 
-  it('2.U6 shutdown stops claiming and waits for in-flight handles', async () => {
+  it('shutdown stops claiming and waits for in-flight handles', async () => {
     const handles = [deferred(), deferred()];
     claim
       .mockResolvedValueOnce(event)
@@ -152,7 +152,7 @@ describe('WorkerService', () => {
     expect(claim).toHaveBeenCalledTimes(claimsBefore);
   });
 
-  it('2.U7 shutdown gives up after 10s', async () => {
+  it('shutdown gives up after 10s', async () => {
     claim.mockResolvedValueOnce(event).mockResolvedValue(null);
     handle.mockReturnValue(new Promise(() => undefined));
     start();

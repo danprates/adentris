@@ -110,7 +110,7 @@ describe('Event processing (e2e)', () => {
     await Promise.all(workers.map((worker) => worker.close()));
   });
 
-  it('2.1 turns a posted event into done', async () => {
+  it('turns a posted event into done', async () => {
     await startWorker({ env: { PROCESSING_DELAY_MS: '100' } });
 
     const res = await request(api.getHttpServer())
@@ -136,7 +136,7 @@ describe('Event processing (e2e)', () => {
     expect(doc?.leaseUntil).toBeUndefined();
   });
 
-  it('2.2 sends dedupKey:0 as the idempotency key', async () => {
+  it('sends dedupKey:0 as the idempotency key', async () => {
     const spy = new ExternalSpy();
     const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
     await startWorker({ external: spy });
@@ -148,7 +148,7 @@ describe('Event processing (e2e)', () => {
     ]);
   });
 
-  it('2.3 processes one patient in ts order', async () => {
+  it('processes one patient in ts order', async () => {
     const spy = new ExternalSpy(20);
     const minutes = [3, 1, 4, 0, 2];
     await seed(
@@ -166,7 +166,7 @@ describe('Event processing (e2e)', () => {
     );
   });
 
-  it('2.4 breaks a ts tie by _id, one at a time', async () => {
+  it('breaks a ts tie by _id, one at a time', async () => {
     const spy = new ExternalSpy(50);
     const ts = `${DAY}T08:00:00Z`;
     await seed([
@@ -181,7 +181,7 @@ describe('Event processing (e2e)', () => {
     expect(spy.maxSamePatient).toBe(1);
   });
 
-  it('2.5 never runs two events of one patient at once', async () => {
+  it('never runs two events of one patient at once', async () => {
     const spy = new ExternalSpy(20);
     await seed(
       Array.from({ length: 20 }, (_, i) => ({
@@ -200,7 +200,7 @@ describe('Event processing (e2e)', () => {
     expect(spy.maxSamePatient).toBe(1);
   }, 15_000);
 
-  it('2.6 runs different patients in parallel', async () => {
+  it('runs different patients in parallel', async () => {
     const spy = new ExternalSpy(500);
     await seed(
       Array.from({ length: 10 }, (_, i) => ({
@@ -220,7 +220,7 @@ describe('Event processing (e2e)', () => {
     expect(spy.maxActive).toBe(10);
   });
 
-  it('2.7 lets Mongo refuse a second processing event for a patient', async () => {
+  it('lets Mongo refuse a second processing event for a patient', async () => {
     const doc = (dedupKey: string) => ({
       dedupKey,
       patientId: 'p-1',
@@ -259,7 +259,7 @@ describe('Event processing (e2e)', () => {
     expect(spy.calls.every((c) => c.patientId === 'p-2')).toBe(true);
   });
 
-  it('2.8 does not complete an event whose lease moved to another worker', async () => {
+  it('does not complete an event whose lease moved to another worker', async () => {
     const spy = new ExternalSpy();
     let release!: () => void;
     spy.wait = () => new Promise((resolve) => (release = resolve));
@@ -281,7 +281,7 @@ describe('Event processing (e2e)', () => {
     expect(after?.result).toBeUndefined();
   });
 
-  it('2.9 two workers process each event exactly once', async () => {
+  it('two workers process each event exactly once', async () => {
     const spy = new ExternalSpy(20);
     await seed(
       Array.from({ length: 50 }, (_, i) => ({
@@ -301,7 +301,7 @@ describe('Event processing (e2e)', () => {
     expect(spy.maxSamePatient).toBe(1);
   }, 15_000);
 
-  it('2.10 finishes the in-flight event before closing', async () => {
+  it('finishes the in-flight event before closing', async () => {
     const spy = new ExternalSpy(500);
     const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
     const worker = await startWorker({ external: spy });
@@ -350,7 +350,7 @@ describe('Event processing (e2e)', () => {
     expect(order).toEqual(['H1', 'H1', 'H1', 'H1', 'H2']);
   });
 
-  it('2.11 logs one wide event per processed event', async () => {
+  it('logs one wide event per processed event', async () => {
     const logs = captureLogs();
     try {
       const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);

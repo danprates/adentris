@@ -7,7 +7,7 @@ describe('processingConfig', () => {
     process.env = { ...env };
   });
 
-  it('2.U8 refuses to boot when EXTERNAL_TIMEOUT_MS is not lower than LEASE_MS', () => {
+  it('refuses to boot when EXTERNAL_TIMEOUT_MS is not lower than LEASE_MS', () => {
     process.env.EXTERNAL_TIMEOUT_MS = '30000';
     process.env.LEASE_MS = '30000';
 

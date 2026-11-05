@@ -98,7 +98,7 @@ describe('Failure handling (e2e)', () => {
     await Promise.all(workers.map((worker) => worker.close()));
   });
 
-  it('3.1 fails once and then succeeds', async () => {
+  it('fails once and then succeeds', async () => {
     const external = flakyExternal((_, call) => call === 1);
     await insert();
     await startWorker({ external, env: FAST });
@@ -111,7 +111,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.calls).toHaveLength(2);
   });
 
-  it('3.2 gives up after five attempts when the API always fails', async () => {
+  it('gives up after five attempts when the API always fails', async () => {
     const external = flakyExternal(() => true);
     await insert();
     await startWorker({ external, env: FAST });
@@ -125,7 +125,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.calls).toHaveLength(5);
   });
 
-  it('3.3 does not retry before availableAt', async () => {
+  it('does not retry before availableAt', async () => {
     let failedAt = 0;
     const external = flakyExternal((_, call) => {
       if (call !== 1) return false;
@@ -147,7 +147,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.calls[1].at).toBeGreaterThanOrEqual(availableAt);
   });
 
-  it('3.4a holds the later events of a patient while the head waits for a retry', async () => {
+  it('holds the later events of a patient while the head waits for a retry', async () => {
     const external = flakyExternal((name, call) => name === 'E1' && call === 1);
     await insert({ data: { name: 'E1' } });
     await insert({
@@ -161,7 +161,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.names()).toEqual(['E1', 'E1', 'E2']);
   });
 
-  it('3.4 does not block the patient after an event fails', async () => {
+  it('does not block the patient after an event fails', async () => {
     const external = flakyExternal((name) => name === 'E1');
     await insert({ data: { name: 'E1' } });
     await insert({
@@ -176,7 +176,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.names()).toEqual(['E1', 'E1', 'E1', 'E1', 'E1', 'E2']);
   });
 
-  it('3.5 hands an event of a dead worker to a live one', async () => {
+  it('hands an event of a dead worker to a live one', async () => {
     const external = flakyExternal(() => false);
     await insert({
       status: 'processing',
@@ -194,7 +194,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.calls).toHaveLength(1);
   });
 
-  it('3.6 leaves a lease that has not expired alone', async () => {
+  it('leaves a lease that has not expired alone', async () => {
     const external = flakyExternal(() => false);
     await insert({
       status: 'processing',
@@ -213,7 +213,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.calls).toHaveLength(0);
   });
 
-  it('3.7 fails an event whose lease expired on the last attempt', async () => {
+  it('fails an event whose lease expired on the last attempt', async () => {
     const external = flakyExternal(() => false);
     await insert({
       status: 'processing',
@@ -232,7 +232,7 @@ describe('Failure handling (e2e)', () => {
     expect(external.calls).toHaveLength(0);
   });
 
-  it('3.8 keeps the result of the worker that holds the lease', async () => {
+  it('keeps the result of the worker that holds the lease', async () => {
     let release!: () => void;
     const slow = {
       async process() {
@@ -344,7 +344,7 @@ describe('Failure handling (e2e)', () => {
     }
   });
 
-  it('3.9 survives Mongo stalling for 3s and finishes the pending events', async () => {
+  it('survives Mongo stalling for 3s and finishes the pending events', async () => {
     const external = flakyExternal(() => false, 200);
     for (let i = 0; i < 6; i++) {
       await insert({ patientId: `p-${i % 3}`, data: { name: `E${i}` } });
@@ -365,7 +365,7 @@ describe('Failure handling (e2e)', () => {
     );
   }, 30_000);
 
-  it('3.10 logs a retry line and then a done line', async () => {
+  it('logs a retry line and then a done line', async () => {
     const logs = captureLogs();
     try {
       const external = flakyExternal((_, call) => call === 1);
@@ -394,7 +394,7 @@ describe('Failure handling (e2e)', () => {
     }
   });
 
-  it('3.11 times out a hung API call before the lease expires', async () => {
+  it('times out a hung API call before the lease expires', async () => {
     const logs = captureLogs();
     try {
       let calls = 0;

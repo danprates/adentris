@@ -47,7 +47,7 @@ describe('POST /events (e2e)', () => {
     await clearEvents(app);
   });
 
-  it('1.1 accepts a new event and stores it as pending', async () => {
+  it('accepts a new event and stores it as pending', async () => {
     const res = await post(validEvent()).expect(202);
 
     const { id, ...rest } = bodyOf(res);
@@ -62,7 +62,7 @@ describe('POST /events (e2e)', () => {
     expect(await count()).toBe(1);
   });
 
-  it('1.2 answers 200 with the same id for a sequential duplicate', async () => {
+  it('answers 200 with the same id for a sequential duplicate', async () => {
     const first = await post(validEvent()).expect(202);
 
     const second = await post(validEvent()).expect(200);
@@ -71,7 +71,7 @@ describe('POST /events (e2e)', () => {
     expect(await count()).toBe(1);
   });
 
-  it('1.3 stores one event when 10 duplicates arrive at once', async () => {
+  it('stores one event when 10 duplicates arrive at once', async () => {
     const responses = await Promise.all(
       Array.from({ length: 10 }, () => post(validEvent())),
     );
@@ -84,7 +84,7 @@ describe('POST /events (e2e)', () => {
     expect(await count()).toBe(1);
   });
 
-  it('1.4 treats reordered data keys as a duplicate', async () => {
+  it('treats reordered data keys as a duplicate', async () => {
     const first = await post(validEvent()).expect(202);
 
     const second = await post({
@@ -95,7 +95,7 @@ describe('POST /events (e2e)', () => {
     expect(bodyOf(second).id).toBe(bodyOf(first).id);
   });
 
-  it('1.5 treats the same content with another ts as a new event', async () => {
+  it('treats the same content with another ts as a new event', async () => {
     const first = await post(validEvent()).expect(202);
 
     const second = await post({
@@ -108,7 +108,7 @@ describe('POST /events (e2e)', () => {
   });
 
   it.each(['patientId', 'type', 'data', 'ts'])(
-    '1.6 rejects a payload without %s',
+    'rejects a payload without %s',
     async (field) => {
       const body: Record<string, unknown> = validEvent();
       delete body[field];
@@ -130,26 +130,26 @@ describe('POST /events (e2e)', () => {
     ['type over 64 characters', { type: 't'.repeat(65) }],
     ['data as a string', { data: 'texto' }],
     ['data as an array', { data: [1, 2] }],
-  ])('1.7 rejects %s', async (_case, change) => {
+  ])('rejects %s', async (_case, change) => {
     await post({ ...validEvent(), ...change }).expect(400);
 
     expect(await count()).toBe(0);
   });
 
-  it('1.8 rejects an unknown field', async () => {
+  it('rejects an unknown field', async () => {
     const res = await post({ ...validEvent(), source: 'ehr' }).expect(400);
 
     expect(JSON.stringify(bodyOf(res).message)).toContain('source');
     expect(await count()).toBe(0);
   });
 
-  it('1.9 rejects malformed JSON', async () => {
+  it('rejects malformed JSON', async () => {
     await post('{"patientId":').expect(400);
 
     expect(await count()).toBe(0);
   });
 
-  it('1.10 rejects a body over 64KB', async () => {
+  it('rejects a body over 64KB', async () => {
     await post({
       ...validEvent(),
       data: { blob: 'x'.repeat(65 * 1024) },
@@ -163,7 +163,7 @@ describe('POST /events (e2e)', () => {
 
     afterEach(() => logs.restore());
 
-    it('1.11 logs one line for a new event', async () => {
+    it('logs one line for a new event', async () => {
       logs = captureLogs();
 
       const res = await post(validEvent()).expect(202);
@@ -184,7 +184,7 @@ describe('POST /events (e2e)', () => {
       });
     });
 
-    it('1.12 logs one line marked as duplicate', async () => {
+    it('logs one line marked as duplicate', async () => {
       const first = await post(validEvent()).expect(202);
       logs = captureLogs();
 
@@ -199,7 +199,7 @@ describe('POST /events (e2e)', () => {
       });
     });
 
-    it('1.13 logs one line with the error for an invalid payload', async () => {
+    it('logs one line with the error for an invalid payload', async () => {
       logs = captureLogs();
 
       await post({ ...validEvent(), patientId: '' }).expect(400);
@@ -226,7 +226,7 @@ describe('POST /events (e2e)', () => {
     });
   });
 
-  it('1.14 creates the four planned indexes', async () => {
+  it('creates the four planned indexes', async () => {
     const indexes = await eventsCollection(app).indexes();
     const byKey = (key: object) =>
       indexes.find((i) => JSON.stringify(i.key) === JSON.stringify(key));
@@ -240,7 +240,7 @@ describe('POST /events (e2e)', () => {
     expect(byKey({ patientId: 1, status: 1, ts: 1, _id: 1 })).toBeDefined();
   });
 
-  it('1.15 stores ts as a UTC Date', async () => {
+  it('stores ts as a UTC Date', async () => {
     const res = await post({
       ...validEvent(),
       ts: `${DAY}T10:00:00+02:00`,
@@ -252,7 +252,7 @@ describe('POST /events (e2e)', () => {
     expect(doc?.ts).toEqual(new Date(`${DAY}T08:00:00Z`));
   });
 
-  it('1.16 treats the same instant in another offset as a duplicate', async () => {
+  it('treats the same instant in another offset as a duplicate', async () => {
     const first = await post(validEvent()).expect(202);
 
     const second = await post({
@@ -263,7 +263,7 @@ describe('POST /events (e2e)', () => {
     expect(bodyOf(second).id).toBe(bodyOf(first).id);
   });
 
-  it('1.17 answers 503 within ~2s when Mongo stalls, and the retry succeeds', async () => {
+  it('answers 503 within ~2s when Mongo stalls, and the retry succeeds', async () => {
     execSync('docker compose pause mongo', { stdio: 'ignore' });
     let elapsed: number;
     try {
