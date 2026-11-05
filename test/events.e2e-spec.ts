@@ -19,6 +19,10 @@ interface ResponseBody {
 }
 const bodyOf = (res: Response) => res.body as ResponseBody;
 
+// `levels` objects, each inside the one before.
+const nested = (levels: number): object =>
+  levels === 1 ? { v: 1 } : { a: nested(levels - 1) };
+
 const validEvent = () => ({
   patientId: 'p-1',
   type: 'vitals',
@@ -130,9 +134,24 @@ describe('POST /events (e2e)', () => {
     ['type over 64 characters', { type: 't'.repeat(65) }],
     ['data as a string', { data: 'texto' }],
     ['data as an array', { data: [1, 2] }],
+    ['a body nested deeper than 20 levels', { data: nested(20) }],
   ])('rejects %s', async (_case, change) => {
     await post({ ...validEvent(), ...change }).expect(400);
 
+    expect(await count()).toBe(0);
+  });
+
+  it('accepts a body nested 20 levels deep', async () => {
+    await post({ ...validEvent(), data: nested(19) }).expect(202);
+  });
+
+  it('rejects a body nested thousands of levels deep with 400, not 500', async () => {
+    const body = JSON.stringify({ ...validEvent(), data: {} }).replace(
+      '"data":{}',
+      `"data":${'{"a":'.repeat(10_000)}1${'}'.repeat(10_000)}`,
+    );
+
+    await post(body).expect(400);
     expect(await count()).toBe(0);
   });
 
