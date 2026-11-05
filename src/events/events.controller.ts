@@ -17,8 +17,7 @@ export class EventsController {
     const { id, status, duplicate } = await this.events.create(dto);
     // No dedupKey: it is an unkeyed hash of patientId and data, so a log reader could confirm a guessed reading.
     req.wideEvent = { eventId: id, duplicate };
-    // 202 once the event is stored; a worker processes it later, so the sender never waits for the ~5s call.
-    // Cost: 202 means stored, not processed.
+    // 202 once stored, so the sender never waits for the ~5s call. Cost: 202 means stored, not processed.
     reply.status(duplicate ? 200 : 202);
     return { id, status };
   }

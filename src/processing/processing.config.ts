@@ -17,7 +17,6 @@ export const processingConfig = registerAs('processing', () => {
     leaseMs: positiveInt('LEASE_MS', 30_000),
     externalTimeoutMs: positiveInt('EXTERNAL_TIMEOUT_MS', 10_000),
     processingDelayMs: positiveInt('PROCESSING_DELAY_MS', 5_000),
-    // Wait before attempt n+1 is retryBaseMs * 2^n: 1000 gives 2s, 4s, 8s, 16s.
     retryBaseMs: positiveInt('RETRY_BASE_MS', 1_000),
     reaperIntervalMs: positiveInt('REAPER_INTERVAL_MS', 10_000),
   };

@@ -39,10 +39,8 @@ export class ProcessingService implements OnModuleInit {
   // Claims the head (lowest ts, then _id) of one patient with ready work; null when none is free.
   async claim(): Promise<ClaimedEvent | null> {
     const now = new Date();
-    // Events queued behind a busy patient are the oldest ready ones and would fill the batch, so each claim
-    // walked dozens of busy heads (load test: ~100 claims/s for 167/s). Cost: 1 more query per claim.
-    // A head waiting for a retry blocks its patient the same way, and its queued events would fill the batch
-    // and stall every patient. Cost: a late event that arrives during the retry wait waits for it too.
+    // Busy patients and patients whose head waits for a retry stay out: their queued events are the oldest ready
+    // ones and would fill the batch. Cost: 2 more queries per claim; a late event waits out its patient's retry.
     const [busy, waiting] = await Promise.all([
       this.events.distinct('patientId', { status: 'processing' }),
       this.events.distinct('patientId', {
@@ -162,21 +160,16 @@ export class ProcessingService implements OnModuleInit {
     }
   }
 
-  // A result depends on the events before it, so a late event sends the later done ones back
-  // to the queue and the head claim redoes them in ts order. Cost: extra external calls, with no cap; the
-  // api's 7-day ts window bounds one reprocess.
-  // Safe without a transaction: we hold the patient's lock, and if a crash cuts the updateMany short,
-  // the late event's next claim runs it again and resets the rest.
+  // A result depends on the events before it, so a late event sends the later done ones back to the queue.
+  // No transaction: we hold the patient's lock, and the next claim repeats a reset cut short by a crash.
+  // Cost: extra external calls, with no cap; the api's 7-day ts window bounds one reprocess.
   private async resetLater(event: ClaimedEvent): Promise<number> {
     const { modifiedCount } = await this.events.updateMany(
       // Only done goes back: pending is already queued, and failed waits for an operator.
       { patientId: event.patientId, status: 'done', ts: { $gt: event.ts } },
       {
-        // attempts restart at 0: a reprocess is a new run and gets its full retries, not the ones its earlier
-        // run spent. Cost: attempts counts only the current run, so the total external calls are not stored.
+        // A reprocess is a new run with its full retries. Cost: attempts counts only the current run.
         $set: { status: 'pending', availableAt: new Date(), attempts: 0 },
-        // Each reprocess calls the external API with a new key (dedupKey:reprocessCount);
-        // in our Mongo the event stays 1 document.
         $inc: { reprocessCount: 1 },
       },
     );
@@ -184,7 +177,6 @@ export class ProcessingService implements OnModuleInit {
   }
 
   private callExternal(event: ClaimedEvent): Promise<Record<string, unknown>> {
-    // The timeout stays below the lease (checked at boot); otherwise 2 workers process the same event.
     const signal = AbortSignal.timeout(this.config.externalTimeoutMs);
     return Promise.race([
       this.external.process(

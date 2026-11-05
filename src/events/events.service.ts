@@ -27,15 +27,13 @@ export class EventsService implements OnModuleInit {
     await this.events.init();
   }
 
-  // No backlog limit at the door; we accept while Mongo writes.
-  // Refusing would push the load back to senders and trigger mass retries.
+  // No backlog limit: refusing would push the load back to senders and trigger mass retries.
   // Cost: during a worker outage the queue grows and drains only at the spare worker capacity.
   async create(dto: CreateEventDto): Promise<CreateEventResult> {
     try {
       return await this.insertOrFindOriginal(dto, dedupKey(dto));
     } catch (err) {
-      // 503 instead of waiting: the sender retries and the dedupKey covers the retry.
-      // Cost: the sender must retry on 503.
+      // 503 instead of waiting: the dedupKey makes the sender's retry safe. Cost: the sender must retry on 503.
       if (err instanceof mongo.MongoOperationTimeoutError) {
         throw new ServiceUnavailableException('Event store timed out, retry');
       }
