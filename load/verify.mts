@@ -148,6 +148,8 @@ async function final(events: Events): Promise<boolean> {
     // Documents beyond the 202s can only come from failed requests whose insert landed.
     unexplained: Math.max(0, total - acceptedIds.length - failedRequests),
     pending: s.pending + s.processing,
+    // A failed event is stored but never applied: in a load run without external errors it is a bug.
+    failed: s.failed,
     duplicateKeys: dup?.keys ?? 0,
     outOfOrder,
   };
@@ -155,7 +157,6 @@ async function final(events: Events): Promise<boolean> {
     acceptedNew,
     total,
     done: s.done,
-    failed: s.failed,
     ...checks,
     arrivedOutOfOrder,
     reprocessedEvents: reprocessed?.events ?? 0,
