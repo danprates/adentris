@@ -41,15 +41,21 @@ export class ProcessingService implements OnModuleInit {
     const now = new Date();
     // Events queued behind a busy patient are the oldest ready ones and would fill the batch, so each claim
     // walked dozens of busy heads (load test: ~100 claims/s for 167/s). Cost: 1 more query per claim.
-    const busy: string[] = await this.events.distinct('patientId', {
-      status: 'processing',
-    });
+    // A head waiting for a retry blocks its patient the same way, and its queued events would fill the batch
+    // and stall every patient. Cost: a late event that arrives during the retry wait waits for it too.
+    const [busy, waiting] = await Promise.all([
+      this.events.distinct('patientId', { status: 'processing' }),
+      this.events.distinct('patientId', {
+        status: 'pending',
+        availableAt: { $gt: now },
+      }),
+    ]);
     const ready = await this.events
       .find(
         {
           status: 'pending',
           availableAt: { $lte: now },
-          patientId: { $nin: busy },
+          patientId: { $nin: [...busy, ...waiting] },
         },
         // No _id: it isn't in the index, so asking for it would fetch every scanned document.
         { _id: 0, patientId: 1 },

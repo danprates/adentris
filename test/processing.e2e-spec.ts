@@ -259,6 +259,27 @@ describe('Event processing (e2e)', () => {
     expect(spy.calls.every((c) => c.patientId === 'p-2')).toBe(true);
   });
 
+  it('claims a free patient queued behind 100 events of a patient whose head waits for a retry', async () => {
+    const queued = Array.from({ length: 101 }, (_, i) => ({
+      patientId: 'p-1',
+      ts: new Date(Date.UTC(2026, 10, 3, 8, 0, i)).toISOString(),
+    }));
+    const [head] = await seed([
+      ...queued,
+      { patientId: 'p-2', ts: `${DAY}T09:00:00Z` },
+    ]);
+    // p-2 is newer, so the 100 queued events of p-1 are first in the ready batch.
+    await events().updateOne(
+      { _id: head._id },
+      { $set: { availableAt: new Date(Date.now() + 60_000), attempts: 1 } },
+    );
+    const spy = new ExternalSpy();
+    await startWorker({ external: spy });
+
+    await waitFor(() => spy.calls.some((c) => c.patientId === 'p-2'));
+    expect(spy.calls.every((c) => c.patientId === 'p-2')).toBe(true);
+  });
+
   it('does not complete an event whose lease moved to another worker', async () => {
     const spy = new ExternalSpy();
     let release!: () => void;

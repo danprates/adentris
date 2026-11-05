@@ -107,12 +107,12 @@ Mongo does it with two indexes.
 | `reprocessCount`                   | How many times the event was reprocessed or requeued; part of the idempotency key                        |
 | `receivedAt`                       | When the api stored the event                                                                            |
 
-| Index                                                         | Purpose                                                                          |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `{ dedupKey: 1 }`, unique                                     | Stores a resent event once                                                       |
-| `{ patientId: 1 }`, unique, partial on `status: 'processing'` | Lets at most one event per patient be in processing (the per-patient lock)       |
-| `{ status: 1, availableAt: 1, patientId: 1 }`                 | Lists the busy patients and the patients with ready events, from the index alone |
-| `{ patientId: 1, status: 1, ts: 1, _id: 1 }`                  | Finds a patient's head event, and the later `done` events of a late event        |
+| Index                                                         | Purpose                                                                    |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `{ dedupKey: 1 }`, unique                                     | Stores a resent event once                                                 |
+| `{ patientId: 1 }`, unique, partial on `status: 'processing'` | Lets at most one event per patient be in processing (the per-patient lock) |
+| `{ status: 1, availableAt: 1, patientId: 1 }`                 | Lists the busy, waiting and ready patients, from the index alone           |
+| `{ patientId: 1, status: 1, ts: 1, _id: 1 }`                  | Finds a patient's head event, and the later `done` events of a late event  |
 
 ### How a worker processes an event
 
@@ -126,7 +126,7 @@ To **reprocess** an event is to set a `done` event back to `pending`, so that it
 
 One dispatch loop per worker claims events. Each worker has 500 **slots** (`WORKER_CONCURRENCY`): at most 500 claimed events run at the same time.
 
-1. Read the busy patients, and a batch of up to 100 ready `pending` events of the other patients.
+1. Read the busy patients and the patients whose head waits for a retry, and a batch of up to 100 ready `pending` events of the other patients.
 2. For each patient in the batch, read the head. Claim it only if it is `pending` and ready (`availableAt` has passed); a head in processing means the patient is busy, and the worker skips it. The per-patient lock rejects the claim when the patient is busy anyway: another worker claimed it first, or the head is a lower-`ts` event that arrived while the patient was busy.
 3. If the claimed event is late, reprocess the patient's `done` events with a higher `ts` (see [Order](#events-arrive-out-of-order-and-state-depends-on-their-sequence)).
 4. Call the external system with a 10 s timeout.
@@ -156,6 +156,7 @@ Each decision below has a matching "why" comment at the code that implements it.
 ### Events arrive out of order, and state depends on their sequence
 
 - **One event per patient at a time, head first.** The per-patient lock lets Mongo refuse a second event of one patient in processing, and a worker claims only the patient's head. Later events wait while the head runs or waits for a retry, so an event that arrives out of order while the patient is busy still runs in `ts` order. Cost: one patient gets at most 12 events/min (5 s each), across all types. `src/events/schemas/event.schema.ts`, `src/processing/processing.service.ts`
+- **A patient whose head waits for a retry stays out of the claim batch, like a busy one.** Otherwise its queued events, the oldest ready ones, fill the batch of 100, and every worker idles until the retry. Cost: a late event that arrives during the retry wait waits for it too. `src/processing/processing.service.ts`
 - **We trust the sender's clock.** Order is by `ts`, not by arrival. Cost: a sender whose clock runs ahead puts its events in the wrong order, and we do not detect it. `src/events/dto/create-event.dto.ts`
 - **`ts` must fall between 7 days ago and 5 minutes ahead.** A `ts` in the future would make every later event of the patient late, and each would reprocess it; a very old `ts` would reprocess the patient's whole history. The api answers `400` outside the window. Cost: a sender offline for more than 7 days cannot deliver its backlog. `src/events/dto/create-event.dto.ts`
 - **`_id` breaks a tie on equal `ts`.** The api creates the `_id` (an ObjectId) when it stores the event, so with one api the tie follows arrival order. ObjectIds from different processes do not compare by arrival: they carry the second of creation, then a per-process random value. Cost: with several api replicas, two events of one patient with the same `ts` can run in either order. `src/processing/processing.service.ts`
