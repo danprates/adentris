@@ -35,6 +35,8 @@ export class ProcessingService implements OnModuleInit {
 
   // Claims the head (lowest ts, then _id) of one patient with ready work; null when none is free.
   async claim(): Promise<ClaimedEvent | null> {
+    // The worker's clock against an availableAt from the api's; $$NOW would put $expr in 3 queries for a skew NTP
+    // keeps in ms. Cost: a new event waits as long as the api's clock runs ahead of the worker's.
     const now = new Date();
     // Busy patients and patients whose head waits for a retry stay out: their queued events are the oldest ready
     // ones and would fill the batch. Cost: 2 more queries per claim; a late event waits out its patient's retry.
