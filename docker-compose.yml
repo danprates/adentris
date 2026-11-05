@@ -8,7 +8,8 @@ services:
     # Sized from 3-min runs at 167/s (Mongo avg 43-60%, api/worker peaks under 50%); spikes above the cap get throttled.
     cpus: 1.5
     ports:
-      - '27017:27017'
+      # Loopback only: Mongo runs without auth, and only the e2e tests on this machine need the port.
+      - '127.0.0.1:27017:27017'
     volumes:
       - mongo-data:/data/db
     healthcheck:
@@ -94,6 +95,7 @@ services:
         condition: service_started
 
   # SIGKILLs one worker halfway through the load; needs the Docker socket to reach the worker's process.
+  # The socket and --pid=host give root on the Docker VM: local load runs only.
   chaos:
     image: docker:27.5.1-cli
     profiles: [load]

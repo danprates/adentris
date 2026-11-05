@@ -211,6 +211,7 @@ PHI is health data that identifies a patient. Under HIPAA, every system that sto
 - **`data` never goes to the logs.** It holds the clinical payload.
 - **`patientId` stays in Mongo in plain text.** The worker needs it for the per-patient lock and the order. Encryption at rest and access control belong to the Mongo deployment, not to this service.
 - **The compose file ships a dev key.** Production injects its own secret, the same one for api and worker.
+- **The compose stack is for local runs only.** Mongo has no auth, so its port listens on `127.0.0.1` only, for the e2e tests. The `chaos` container of the load profile mounts `/var/run/docker.sock` and runs `docker run --pid=host`, which gives root on the Docker VM. Production needs Mongo auth and TLS, and no `chaos`. `docker-compose.yml`
 
 ## Trade-offs
 
