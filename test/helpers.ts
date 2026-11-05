@@ -85,7 +85,6 @@ export interface WideEvent {
   durationMs: number;
   patientRef?: string;
   eventId?: string;
-  dedupKey?: string;
   duplicate?: boolean;
   error?: string;
 }

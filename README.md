@@ -137,7 +137,7 @@ When no event is ready, or all 500 slots are in use, the loop waits until a runn
 ### Logs
 
 Each request and each processed event writes one JSON log line at the end, with all its context ("wide event").
-A request line has the route, status, duration, `patientRef`, event id, `dedupKey` and `duplicate`.
+A request line has the route, status, duration, `patientRef`, event id and `duplicate`.
 A processing line has `patientRef` too: a keyed hash of `patientId` (see [Patient data](#patient-data-is-phi)).
 A processing line has the attempt, the outcome (`done`, `retry`, `failed`, `lease_lost`, `write_failed`), the external call time, and `late` and `reprocessed` for late events.
 `GET /health` checks that Mongo answers.
@@ -211,6 +211,7 @@ PHI is health data that identifies a patient. Under HIPAA, every system that sto
 
 - **Logs carry `patientRef`, not `patientId`.** `patientRef` is the first 16 hex characters of an HMAC-SHA256 of `patientId`, keyed by `LOG_HASH_KEY`. One patient's lines still match, and the id stays out of the logs. A plain SHA-256 would not be enough: patient ids are often guessable, and anyone can hash every candidate and compare. The api and the worker refuse to boot without the key. Cost: to find one patient's lines, an operator computes the ref with the key. `src/common/patient-ref.ts`
 - **`data` never goes to the logs.** It holds the clinical payload.
+- **`dedupKey` never goes to the logs.** It is a plain SHA-256 of `patientId`, `type`, `ts` and `data`: with a small payload, anyone can hash candidates and confirm a patient's reading. The event id links a duplicate to its original instead. Cost: an operator who has an event looks up its `dedupKey` in Mongo. `src/events/events.controller.ts`
 - **`patientId` stays in Mongo in plain text.** The worker needs it for the per-patient lock and the order. Encryption at rest and access control belong to the Mongo deployment, not to this service.
 - **The compose file ships a dev key.** Production injects its own secret, the same one for api and worker.
 - **The compose stack is for local runs only.** Mongo has no auth, so its port listens on `127.0.0.1` only, for the e2e tests. The `chaos` container of the load profile mounts `/var/run/docker.sock` and runs `docker run --pid=host`, which gives root on the Docker VM. Production needs Mongo auth and TLS, and no `chaos`. `docker-compose.yml`

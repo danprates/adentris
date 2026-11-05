@@ -13,7 +13,6 @@ export interface CreateEventResult {
   id: string;
   status: EventStatus;
   duplicate: boolean;
-  dedupKey: string;
 }
 
 const DUPLICATE_KEY = 11000;
@@ -67,7 +66,6 @@ export class EventsService implements OnModuleInit {
         id: doc._id.toString(),
         status: doc.status,
         duplicate: false,
-        dedupKey: key,
       };
     } catch (err) {
       // A duplicate is also the retry of a sender whose 202 was lost when the api died after the insert.
@@ -90,7 +88,6 @@ export class EventsService implements OnModuleInit {
       id: original._id.toString(),
       status: original.status,
       duplicate: true,
-      dedupKey: key,
     };
   }
 }

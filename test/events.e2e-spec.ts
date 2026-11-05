@@ -168,7 +168,6 @@ describe('POST /events (e2e)', () => {
 
       const res = await post(validEvent()).expect(202);
 
-      const doc = await eventsCollection(app).findOne();
       const lines = logs.wideEvents();
       expect(lines).toHaveLength(1);
       const { durationMs, ...rest } = lines[0];
@@ -179,7 +178,6 @@ describe('POST /events (e2e)', () => {
         status: 202,
         patientRef: patientRef('p-1'),
         eventId: bodyOf(res).id,
-        dedupKey: doc?.dedupKey as string,
         duplicate: false,
       });
     });
