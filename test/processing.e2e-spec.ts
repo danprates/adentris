@@ -12,6 +12,7 @@ import {
   createApi,
   createWorker,
   eventsCollection,
+  onDay,
   waitFor,
   WorkerOptions,
   DAY,
@@ -186,7 +187,7 @@ describe('Event processing (e2e)', () => {
     await seed(
       Array.from({ length: 20 }, (_, i) => ({
         patientId: 'p-1',
-        ts: new Date(Date.UTC(2026, 10, 3, 8, 0, i)).toISOString(),
+        ts: onDay('08:00:00', i * 1000).toISOString(),
       })),
     );
     await startWorker({
@@ -241,7 +242,7 @@ describe('Event processing (e2e)', () => {
   it('claims a free patient queued behind 100 events of a busy patient', async () => {
     const busy = Array.from({ length: 101 }, (_, i) => ({
       patientId: 'p-1',
-      ts: new Date(Date.UTC(2026, 10, 3, 8, 0, i)).toISOString(),
+      ts: onDay('08:00:00', i * 1000).toISOString(),
     }));
     const [head] = await seed([
       ...busy,
@@ -262,7 +263,7 @@ describe('Event processing (e2e)', () => {
   it('claims a free patient queued behind 100 events of a patient whose head waits for a retry', async () => {
     const queued = Array.from({ length: 101 }, (_, i) => ({
       patientId: 'p-1',
-      ts: new Date(Date.UTC(2026, 10, 3, 8, 0, i)).toISOString(),
+      ts: onDay('08:00:00', i * 1000).toISOString(),
     }));
     const [head] = await seed([
       ...queued,
@@ -307,7 +308,7 @@ describe('Event processing (e2e)', () => {
     await seed(
       Array.from({ length: 50 }, (_, i) => ({
         patientId: `p-${i % 20}`,
-        ts: new Date(Date.UTC(2026, 10, 3, 8, 0, i)).toISOString(),
+        ts: onDay('08:00:00', i * 1000).toISOString(),
       })),
     );
     await Promise.all([

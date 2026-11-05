@@ -13,6 +13,10 @@ export const DAY = new Date(Date.now() - 24 * 60 * 60_000)
   .toISOString()
   .slice(0, 10);
 
+// A time on DAY plus an offset, for tests that need many distinct ts values.
+export const onDay = (time: string, plusMs = 0) =>
+  new Date(new Date(`${DAY}T${time}Z`).getTime() + plusMs);
+
 export async function createApi(): Promise<NestFastifyApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],

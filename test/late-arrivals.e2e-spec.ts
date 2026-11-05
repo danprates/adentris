@@ -9,6 +9,7 @@ import {
   createApi,
   createWorker,
   eventsCollection,
+  onDay,
   waitFor,
   WorkerOptions,
 } from './helpers';
@@ -46,7 +47,7 @@ function spyExternal({
 }
 
 // 10:00 plus `minute` minutes on the test day.
-const at = (minute: number) => new Date(Date.UTC(2026, 10, 3, 10, minute));
+const at = (minute: number) => onDay('10:00:00', minute * 60_000);
 
 describe('Late arrivals (e2e)', () => {
   let api: NestFastifyApplication;
