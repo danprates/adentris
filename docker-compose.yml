@@ -22,7 +22,8 @@ services:
     build: .
     cpus: 0.5
     ports:
-      - '3000:3000'
+      # Loopback only: the api has no auth and takes patient data; k6 reaches it on the compose network.
+      - '127.0.0.1:3000:3000'
     environment:
       MONGO_URI: mongodb://mongo:27017/ingest
       PORT: 3000
