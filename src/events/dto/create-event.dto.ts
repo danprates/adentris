@@ -33,6 +33,7 @@ export class CreateEventDto {
   data!: Record<string, unknown>;
 
   // ts becomes a UTC Date so ordering and dedup compare instants, not strings.
+  // Cost: a Date keeps milliseconds, so events that differ only below 1 ms share a dedup key.
   // We trust the sender's clock; a clock running ahead orders events wrongly.
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' &&
