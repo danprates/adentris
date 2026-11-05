@@ -42,7 +42,7 @@ Measured on one laptop (Docker VM with 8 vCPU), with CPU caps in compose so the 
 
 In runs A–C the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
 A load run found a bug: the query that picks the next event filled its batch with busy patients (patients that already have an event in processing), and the queue grew without limit. The fix leaves busy patients out of the batch.
-[`load/RESULTS.md`](load/RESULTS.md) has every run, a headroom check at 10,000 events/min, the stalls we measured and the tuning between runs.
+[`load/RESULTS.md`](load/RESULTS.md) has every run and what the load runs found and changed.
 
 ### Optional
 
