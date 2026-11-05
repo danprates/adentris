@@ -33,7 +33,7 @@ export class CreateEventDto {
   data!: Record<string, unknown>;
 
   // ts becomes a UTC Date so ordering and dedup compare instants, not strings.
-  // C1: we trust the sender's clock; a clock running ahead orders events wrongly.
+  // We trust the sender's clock; a clock running ahead orders events wrongly.
   @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' &&
     isISO8601(value, { strict: true }) &&

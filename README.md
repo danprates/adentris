@@ -6,7 +6,7 @@ It guarantees three things:
 
 - **Nothing is lost.** An event is on disk before the sender gets `202`, and a crashed worker's events go back to the queue.
 - **Nothing is counted twice.** The api stores a resent event once, and each event stays one document.
-- **Each patient's events are applied in `ts` order**, even when they arrive out of order. Two limits apply: we trust the sender's clock (C1), and a `failed` event does not hold the patient (see [Problems and decisions](#problems-and-decisions)).
+- **Each patient's events are applied in `ts` order**, even when they arrive out of order. Two limits apply: we trust the sender's clock, and a `failed` event does not hold the patient (see [Problems and decisions](#problems-and-decisions)).
 
 It runs on NestJS 11 (Fastify), MongoDB 8 and Node 26.
 This README covers how to run and check the service (one command, see [Run it](#run-it)), how it works, and why it works that way.
@@ -34,16 +34,15 @@ A failed latency threshold shows as `✗` but does not change the exit code, so 
 
 ### Results
 
-Measured on one laptop (Docker VM with 8 vCPU), with k6, the api, 2 workers and Mongo capped at 3.5 CPU in total:
+Measured on one laptop (Docker VM with 8 vCPU), with CPU caps in compose so the numbers repeat:
 
-| Load                                      | POST p99 (k6)        | Failed requests                                           | `verify --final`                                          |
-| ----------------------------------------- | -------------------- | --------------------------------------------------------- | --------------------------------------------------------- |
-| 1,000 events/min, runs A–C                | 8.0 / 10.9 / 15.2 ms | 0                                                         | PASS: 0 lost, 0 duplicated, 0 out of order                |
-| 10,000 events/min, run 4 (headroom check) | 37.6 ms              | 0 (k6 dropped 39 of ~100,200 sends: no free virtual user) | PASS: 90,178 events, 0 lost, 0 duplicated, 0 out of order |
+| Load                       | POST p99 (k6)        | Failed requests | `verify --final`                           |
+| -------------------------- | -------------------- | --------------- | ------------------------------------------ |
+| 1,000 events/min, runs A–C | 8.0 / 10.9 / 15.2 ms | 0               | PASS: 0 lost, 0 duplicated, 0 out of order |
 
 At 1,000 events/min the killed worker was back in 1 s, and the oldest pending event waited at most 37 s, because the dead worker's events wait for their lease (the 30 s hold a worker has on an event, see [How a worker processes an event](#how-a-worker-processes-an-event)) to expire.
-The first run at 10,000 events/min found a bug: the query that picks the next event filled its batch with busy patients (patients that already have an event in processing), and the queue grew without limit. The fix leaves busy patients out of the batch.
-[`load/RESULTS.md`](load/RESULTS.md) has every run, the stalls we measured and the tuning between runs.
+A load run found a bug: the query that picks the next event filled its batch with busy patients (patients that already have an event in processing), and the queue grew without limit. The fix leaves busy patients out of the batch.
+[`load/RESULTS.md`](load/RESULTS.md) has every run, a headroom check at 10,000 events/min, the stalls we measured and the tuning between runs.
 
 ### Optional
 
@@ -146,7 +145,6 @@ A processing line has the attempt, the outcome (`done`, `retry`, `failed`, `leas
 ## Problems and decisions
 
 Each decision below has a matching "why" comment at the code that implements it.
-C1, A1, B1 and Option C are labels from the list of options we compared for each problem. The code comments use the same labels, so you can search for them.
 
 ### Senders retry and send the same event twice
 
@@ -158,14 +156,14 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
 ### Events arrive out of order, and state depends on their sequence
 
 - **One event per patient at a time, head first.** The per-patient lock lets Mongo refuse a second event of one patient in processing, and a worker claims only the patient's head. Later events wait while the head runs or waits for a retry, so an event that arrives out of order while the patient is busy still runs in `ts` order. Cost: one patient gets at most 12 events/min (5 s each), across all types. `src/events/schemas/event.schema.ts`, `src/processing/processing.service.ts`
-- **C1: we trust the sender's clock.** Order is by `ts`, not by arrival. Cost: a sender whose clock runs ahead puts its events in the wrong order, and we do not detect it. `src/events/dto/create-event.dto.ts`
+- **We trust the sender's clock.** Order is by `ts`, not by arrival. Cost: a sender whose clock runs ahead puts its events in the wrong order, and we do not detect it. `src/events/dto/create-event.dto.ts`
 - **`ts` must fall between 7 days ago and 5 minutes ahead.** A `ts` in the future would make every later event of the patient late, and each would reprocess it; a very old `ts` would reprocess the patient's whole history. The api answers `400` outside the window. Cost: a sender offline for more than 7 days cannot deliver its backlog. `src/events/dto/create-event.dto.ts`
-- **Option C: a late event reprocesses the later ones.** The worker reprocesses the patient's `done` events with a higher `ts`, and they run in `ts` order after the late event. `src/processing/processing.service.ts`
+- **A late event reprocesses the later ones.** The worker reprocesses the patient's `done` events with a higher `ts`, and they run in `ts` order after the late event. `src/processing/processing.service.ts`
   - Why: each result depends on the events before it, so a result computed without the late event is wrong.
   - An equal `ts` is not late, and a new event with a higher `ts` reprocesses nothing.
   - Only `done` events are reprocessed; `failed` events wait for an operator.
   - No transaction is needed: the worker holds the per-patient lock, and if a crash cuts the reprocess short, the late event's next claim repeats it.
-  - Cost: extra external calls (load test at 10,000 events/min: 10,674 reprocesses for 90,178 events), and the new processing run overwrites the old `result`.
+  - Cost: extra external calls (about 133 per 10-min run at 1,000 events/min), and the new processing run overwrites the old `result`.
   - No cap on how many events one late event reprocesses. The `ts` window limits it to 7 days of the patient's events: for a patient with 1 event/min, a 7-day-old event reprocesses 10,080 events, ~14 h with the patient held at 12 events/min.
 
 ### An event may never be lost or counted twice
@@ -173,7 +171,7 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
 - **The insert waits for the journal (`j: true`) before the `202`.** An accepted event survives a Mongo crash. Cost: each insert waits for a journal `fsync`. A slow `fsync` stalls the `202`s: in a 3-min load run, one slow `fsync` of ~500 ms matched a 1–2 s burst of slow requests. `src/events/events.service.ts`
 - **The api rejects unknown fields instead of dropping them.** Dropping a field would lose clinical data silently, so the api answers `400`. A body over 64 KB gets `413`. `src/app.setup.ts`
 - **Only the lease holder writes the result.** The write filters on `leaseOwner`, `attempts` and `reprocessCount`, so a worker that lost its lease, or a stale handle of the same worker, never overwrites a later claim. `src/processing/processing.service.ts`
-- **A1: the idempotency key changes on every reprocess.** The worker passes `dedupKey:reprocessCount` to the external system; a real client sends it as the `Idempotency-Key` header. A repeated call with the same key can be recognized, but a reprocess sends a new key on purpose. In our Mongo the event stays one document. Cost: the external system must treat a new key for the same event as "recompute and replace", not "add". It must also take ~85 concurrent calls at 1,000 events/min and ~834 at 10,000 events/min. `src/processing/external-processor.service.ts`, `src/processing/processing.service.ts`
+- **The idempotency key changes on every reprocess.** The worker passes `dedupKey:reprocessCount` to the external system; a real client sends it as the `Idempotency-Key` header. A repeated call with the same key can be recognized, but a reprocess sends a new key on purpose. In our Mongo the event stays one document. Cost: the external system must treat a new key for the same event as "recompute and replace", not "add". It must also take ~85 concurrent calls at 1,000 events/min. `src/processing/external-processor.service.ts`, `src/processing/processing.service.ts`
 - **5 attempts, then `failed`.** A failed external call retries after 2 s, 4 s, 8 s and 16 s; the patient waits during the retries. After the 5th attempt the event turns `failed`. That holds a patient for 30 s of waits plus 5 calls (up to 80 s at the 10 s timeout). Cost: an external outage longer than that fails the event. `src/processing/retry-policy.ts`
 - **`failed` does not block the patient.** Blocking a patient forever for one bad event is worse. Cost: the later events run on a state that lacks the failed event, until an operator requeues it. `src/processing/processing.service.ts`
 
@@ -197,20 +195,17 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
 
 Capacity is 2 workers × 500 slots ÷ 5 s = 200 events/s = 12,000 events/min.
 At 1,000 events/min about 85 events are in processing (measured: 78–79 on average).
-At 10,000 events/min it is 834 of the 1,000 slots (measured: 830–870), and capacity is 20% above the load (12,000 vs 10,000 events/min).
 Workers scale by replicas: `docker compose up -d --scale worker=4`.
 
-- **B1: no backlog limit at the door.** The api accepts every valid event while Mongo writes. `src/events/events.service.ts`
+- **No backlog limit at the door.** The api accepts every valid event while Mongo writes. `src/events/events.service.ts`
   - Why: refusing would push the load back to the senders and trigger mass retries.
   - Cost: during a worker outage the queue grows, and it drains only at the spare capacity.
-  - In theory, with every worker down for 10 min, the queue drains in about 1 min at 1,000 events/min (183 spare events/s), and in about 50 min at 10,000 events/min (33 spare events/s). One patient drains at most 12 events/min.
-  - Measured at 10,000 events/min, with one of two workers killed, in runs 2 and 3 (before the tuning and the CPU caps): the queue was back to its normal size 85 s and 105 s after the kill.
+  - In theory, with every worker down for 10 min, the queue drains in about 1 min at 1,000 events/min (183 spare events/s). One patient drains at most 12 events/min.
 - **One dispatch loop and a counter, not 500 polling loops.** An empty queue costs 1 query/s per worker. Cost: claims run one at a time per worker, so more throughput needs more replicas. `src/processing/worker.service.ts`
 - **The claim reuses its two reads for 200 ms.** `src/processing/processing.service.ts`
   - Why: read on every claim, the busy-patient list scanned ~850 index keys per claim, and the batch was ~75% of the index keys Mongo read. Measured at 10,000 events/min: Mongo's CPU fell from 114% to 69–77% with the first cache, and index keys read fell from 51,500/s to 12,600/s with the second.
   - Order stays safe: every claim still reads the head, and the per-patient lock guards it.
   - Cost: a patient that became free or ready can wait up to 200 ms, and a patient that another worker claimed meanwhile costs 1 wasted head lookup.
-- **CPU caps in compose (3.5 of 8 cores).** Mongo 1.5, api 0.5, each worker 0.5, k6 0.5. On a shared laptop they keep the load numbers repeatable. `docker-compose.yml`
 
 ### Patient data is PHI
 
@@ -223,22 +218,22 @@ PHI is health data that identifies a patient. Under HIPAA, every system that sto
 
 ## Trade-offs
 
-| We accept                              | What it costs                                                                      | When it shows                                                                                        |
-| -------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Content is the dedup key               | Two truly identical events become one                                              | A sender emits the same reading twice at the same `ts`                                               |
-| Content is the dedup key               | A resend with one changed field counts twice                                       | A sender adds a send time or a retry count when it resends                                           |
-| Order by the sender's clock (C1)       | Wrong order, not detected                                                          | A sender's clock runs ahead                                                                          |
-| One event per patient at a time        | At most 12 events/min per patient; the rest queue                                  | One patient sends faster than that                                                                   |
-| Reprocess later events (Option C)      | Extra external calls; the old `result` is overwritten                              | Many events arrive late (load test at 10,000/min: 10,674 reprocesses for 90,178 events)              |
-| No cap on one reprocess                | Up to 7 days of a patient's events run again; the patient waits                    | An event arrives days late                                                                           |
-| New idempotency key per reprocess (A1) | The external system must "recompute and replace"                                   | The external system sums results per key                                                             |
-| One external call per event, 5 s each  | The external system holds ~85 concurrent calls at 1,000 events/min, ~834 at 10,000 | Always                                                                                               |
-| `failed` does not block the patient    | Later events run without the failed one                                            | Until an operator requeues it                                                                        |
-| Lease of 30 s                          | A crashed worker's events wait up to 40 s                                          | Every worker crash or `SIGKILL`                                                                      |
-| `j: true` on every insert              | Each `202` waits for the journal; a slow `fsync` stalls the api                    | Load-test VM: one slow `fsync` of ~500 ms seen in a 3-min run, with a 1–2 s burst of slow requests   |
-| No backlog limit (B1)                  | With every worker down for 10 min at 10,000/min, the queue takes ~50 min to drain  | A worker outage at high load                                                                         |
-| 2 × 500 slots                          | No room for many retries                                                           | 20% external failures at 10,000/min used 990 of 1,000 slots, and ready events grew from ~210 to ~540 |
-| Single-node Mongo                      | No failover; `j: true` protects only against a crash of that node                  | A lost disk                                                                                          |
+| We accept                             | What it costs                                                      | When it shows                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Content is the dedup key              | Two truly identical events become one                              | A sender emits the same reading twice at the same `ts`                                             |
+| Content is the dedup key              | A resend with one changed field counts twice                       | A sender adds a send time or a retry count when it resends                                         |
+| Order by the sender's clock           | Wrong order, not detected                                          | A sender's clock runs ahead                                                                        |
+| One event per patient at a time       | At most 12 events/min per patient; the rest queue                  | One patient sends faster than that                                                                 |
+| Reprocess later events                | Extra external calls; the old `result` is overwritten              | Many events arrive late                                                                            |
+| No cap on one reprocess               | Up to 7 days of a patient's events run again; the patient waits    | An event arrives days late                                                                         |
+| New idempotency key per reprocess     | The external system must "recompute and replace"                   | The external system sums results per key                                                           |
+| One external call per event, 5 s each | The external system holds ~85 concurrent calls at 1,000 events/min | Always                                                                                             |
+| `failed` does not block the patient   | Later events run without the failed one                            | Until an operator requeues it                                                                      |
+| Lease of 30 s                         | A crashed worker's events wait up to 40 s                          | Every worker crash or `SIGKILL`                                                                    |
+| `j: true` on every insert             | Each `202` waits for the journal; a slow `fsync` stalls the api    | Load-test VM: one slow `fsync` of ~500 ms seen in a 3-min run, with a 1–2 s burst of slow requests |
+| No backlog limit                      | After a worker outage, the queue drains only at the spare capacity | A worker outage at high load                                                                       |
+| 2 × 500 slots                         | No room for many retries                                           | Many external failures at high load (see `load/RESULTS.md`)                                        |
+| Single-node Mongo                     | No failover; `j: true` protects only against a crash of that node  | A lost disk                                                                                        |
 
 ## Operations
 
@@ -255,19 +250,6 @@ docker compose exec mongo mongosh ingest --eval '
 ```
 
 The worker treats it as a late event: it reprocesses the patient's `done` events with a higher `ts`, which run after it in `ts` order.
-
-### Drop the old indexes on an existing database
-
-Mongoose creates missing indexes at boot but never drops old ones.
-This step applies only to a `mongo-data` volume created before the claim indexes changed; a clean clone never needs it.
-Such a database still has `status_1_availableAt_1_ts_1` and `patientId_1_status_1_ts_1`: no query uses them, and they slow every insert.
-Drop them once. On a database without them, the command stops with an "index not found" error, which is expected:
-
-```bash
-docker compose exec mongo mongosh ingest --eval '
-  db.events.dropIndex("status_1_availableAt_1_ts_1");
-  db.events.dropIndex("patientId_1_status_1_ts_1")'
-```
 
 ### Configuration
 
@@ -287,11 +269,11 @@ docker compose exec mongo mongosh ingest --eval '
 
 - **A Mongo replica set of 3 nodes with `w: majority`**, so an accepted event survives the loss of one node, not only a crash.
 - **Metrics and alerts** (Prometheus): queue size, age of the oldest pending event, slots in use, external error rate. Today the wide-event logs and `npm run verify` show this.
-- **Autoscaling of workers** on the age of the oldest pending event, so a backlog drains faster than the spare capacity allows (20% above the load at 10,000 events/min).
+- **Autoscaling of workers** on the age of the oldest pending event, so a backlog drains faster than the spare capacity allows.
 - **A history of results per reprocess.** Today a reprocess overwrites `result`, and `attempts` counts only the current processing run.
 - **An optional `Idempotency-Key` header from the sender**, used as the dedup key when present, so a resend with a changed field counts once.
 - **A cap or an alert on large reprocesses**, for example when one late event sends more than 100 events back.
-- **A check on the sender's clock (C1)**, for example a flag on events whose `ts` is ahead of `receivedAt`.
+- **A check on the sender's clock**, for example a flag on events whose `ts` is ahead of `receivedAt`.
 - **An archiving policy.** Clinical data is not deleted, and 1,000 events/min is 1.44 million documents per day.
 - **Batch inserts** (`insertMany`) per short request window, if the per-insert journal wait limits the api.
 - **A wide event for requests that Fastify rejects before Nest** (malformed JSON, `413`, `404`). Today those get no log line.

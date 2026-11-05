@@ -28,7 +28,7 @@ export class EventsService implements OnModuleInit {
     await this.events.init();
   }
 
-  // B1: no backlog limit at the door; we accept while Mongo writes.
+  // No backlog limit at the door; we accept while Mongo writes.
   // Refusing would push the load back to senders and trigger mass retries.
   // Cost: during a worker outage the queue grows and drains only at the spare worker capacity.
   async create(dto: CreateEventDto): Promise<CreateEventResult> {

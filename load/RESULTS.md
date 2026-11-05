@@ -6,17 +6,17 @@ Setup for every run: one laptop (Docker Desktop VM with 8 vCPU and 8 GB) runs k6
 
 Runs A–C used 17 events/s = 1,020 events/min. The load test now sends exactly 1,000 events/min.
 
-| Metric | Run A | Run B | Run C |
-| --- | --- | --- | --- |
-| Requests / `accepted_new` / duplicates (200) | 10,200 / 9,145 / 1,055 | 10,201 / 9,165 / 1,036 | 10,201 / 9,192 / 1,009 |
-| k6 p50 / p95 / p99 / max | 4.5 / 6.6 / **8.0 ms** / 164 ms | 4.4 / 7.6 / **10.9 ms** / 481 ms | 4.5 / 8.1 / **15.2 ms** / 1.5 s |
-| Server p50 / p99 / max | 3 / 6 ms / 104 ms | 3 / 8 ms / 200 ms | 3 / 11 ms / 1.0 s |
-| Failed requests / k6 dropped iterations | 0 / 0 | 0 / 0 | 0 / 0 |
-| Pending avg / max, oldest pending | not sampled | 5 / 10, 13 s | 4 / 20, 37 s |
-| In processing avg / max | not sampled | 78 / 90 | 79 / 142 |
-| Average CPU: Mongo / api / each worker | 20% / 4% / 2–4% | 22% / 4% / 3% | 26% / 5% / 4% |
-| Host load average | 1.7–2.9 | 2.6–5.2 | 3.0–6.5 |
-| `verify --final` | PASS | PASS | PASS |
+| Metric                                       | Run A                           | Run B                            | Run C                           |
+| -------------------------------------------- | ------------------------------- | -------------------------------- | ------------------------------- |
+| Requests / `accepted_new` / duplicates (200) | 10,200 / 9,145 / 1,055          | 10,201 / 9,165 / 1,036           | 10,201 / 9,192 / 1,009          |
+| k6 p50 / p95 / p99 / max                     | 4.5 / 6.6 / **8.0 ms** / 164 ms | 4.4 / 7.6 / **10.9 ms** / 481 ms | 4.5 / 8.1 / **15.2 ms** / 1.5 s |
+| Server p50 / p99 / max                       | 3 / 6 ms / 104 ms               | 3 / 8 ms / 200 ms                | 3 / 11 ms / 1.0 s               |
+| Failed requests / k6 dropped iterations      | 0 / 0                           | 0 / 0                            | 0 / 0                           |
+| Pending avg / max, oldest pending            | not sampled                     | 5 / 10, 13 s                     | 4 / 20, 37 s                    |
+| In processing avg / max                      | not sampled                     | 78 / 90                          | 79 / 142                        |
+| Average CPU: Mongo / api / each worker       | 20% / 4% / 2–4%                 | 22% / 4% / 3%                    | 26% / 5% / 4%                   |
+| Host load average                            | 1.7–2.9                         | 2.6–5.2                          | 3.0–6.5                         |
+| `verify --final`                             | PASS                            | PASS                             | PASS                            |
 
 Every final verify: documents = `accepted_new`, 0 lost, 0 pending, 0 failed, 0 duplicate `dedupKey`, 0 out of order. About 135 events per run arrived after an event with a later `ts` and sent about 133 done events back to the queue. The killed worker was back in 1 s. Its in-flight events wait for the lease to expire and the reaper to run, which is why the oldest pending event reached 37 s in run C. Run C's 1.5 s max came while the host load was at its highest (6.5). The p50 is higher than at 10,000 events/min (4.5 vs 1.6 ms); we did not investigate why.
 
@@ -30,15 +30,15 @@ docker compose --profile load up --build --attach k6 --attach chaos --attach ver
 
 The same stack at 167 events/s, 10× the assignment load. These runs are a record of the headroom check; the load test no longer has a setting for this rate.
 
-| Metric | Run 1 (before fix) | Run 2 | Run 3 | Run 4 (after tuning, CPU caps) |
-| --- | --- | --- | --- | --- |
-| Requests / `accepted_new` / duplicates (200) | 100,201 / 90,246 / 9,955 | 99,092 / 89,251 / 9,828 | 99,928 / 89,885 / 10,043 | 100,162 / 90,178 / 9,984 |
-| k6 p50 / p95 / p99 / max | 1.5 / 3.2 / 12 ms / 272 ms | 1.6 / 6.7 / 686 ms / 6.0 s | 2.1 / 20.5 / 370 ms / 2.3 s | 1.6 / 3.4 / **37.6 ms** / 980 ms |
-| Failed requests | 0 | 13 (503, store timeout) | 0 | 0 |
-| k6 dropped iterations (no free VU in time) | 0 | 1,109 | 273 | 39 |
-| Server p99 | — | 10 ms outside the stall | 42 ms outside the stall | 17 ms, whole run |
-| Peak pending / oldest pending age | 34k and growing / 236 s | 1,289 / 65 s | 2,209 / 52 s | not sampled |
-| `verify --final` | not run (queue never drained) | PASS | PASS | PASS |
+| Metric                                       | Run 1 (before fix)            | Run 2                      | Run 3                       | Run 4 (after tuning, CPU caps)   |
+| -------------------------------------------- | ----------------------------- | -------------------------- | --------------------------- | -------------------------------- |
+| Requests / `accepted_new` / duplicates (200) | 100,201 / 90,246 / 9,955      | 99,092 / 89,251 / 9,828    | 99,928 / 89,885 / 10,043    | 100,162 / 90,178 / 9,984         |
+| k6 p50 / p95 / p99 / max                     | 1.5 / 3.2 / 12 ms / 272 ms    | 1.6 / 6.7 / 686 ms / 6.0 s | 2.1 / 20.5 / 370 ms / 2.3 s | 1.6 / 3.4 / **37.6 ms** / 980 ms |
+| Failed requests                              | 0                             | 13 (503, store timeout)    | 0                           | 0                                |
+| k6 dropped iterations (no free VU in time)   | 0                             | 1,109                      | 273                         | 39                               |
+| Server p99                                   | —                             | 10 ms outside the stall    | 42 ms outside the stall     | 17 ms, whole run                 |
+| Peak pending / oldest pending age            | 34k and growing / 236 s       | 1,289 / 65 s               | 2,209 / 52 s                | not sampled                      |
+| `verify --final`                             | not run (queue never drained) | PASS                       | PASS                        | PASS                             |
 
 Final verify (run 4): 90,178 documents = `accepted_new`, 0 lost, 0 pending, 0 failed, 0 duplicate `dedupKey`, 0 out of order. 11,637 events arrived after an event with a later `ts`, which sent 10,674 done events back to the queue. The killed worker was back in under 1 s. Average CPU: Mongo 41% (peak 102% of its 150% cap), api 15%, each worker 14%, k6 10%. The host load average was 9.3 at the start and 2.8–5.4 for the rest of the run.
 
@@ -54,5 +54,7 @@ Tuning between runs 3 and 4, one measured change at a time (3-min runs at 167 ev
 - Checked with no change: every index is read (`$indexStats`); a head waiting for a retry costs ~1.4 extra 1-key head lookups per claim at 20% external failures.
 
 Stalls: run 4 had no 40–100 s stall, only bursts of 1–2 s (at most 55 POSTs ≥ 100 ms in one second). One burst measured with journal counters matched one slow journal `fsync` of ~500 ms on the VM disk (27 writes queued); checkpoints caused none. `j: true` stays, so these bursts are a cost of the environment. The long stalls of runs 2 and 3 matched a busy host: with the host load at 7–12, every container used about twice the CPU for the same work.
+
+Drain in theory: with every worker down for 10 min, the queue drains in about 50 min at 10,000 events/min (33 spare events/s), against about 1 min at 1,000 events/min. Capacity is 2 workers × 500 slots ÷ 5 s = 12,000 events/min, 20% above this load.
 
 Known limit: with 20% of external calls failing, the 2 workers use 990 of 1,000 slots, because each retry repeats the 5 s call, and ready events grow from ~210 to ~540.

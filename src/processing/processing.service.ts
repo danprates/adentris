@@ -202,7 +202,7 @@ export class ProcessingService implements OnModuleInit {
     return this.busy.patients;
   }
 
-  // Option C: a result depends on the events before it, so a late event sends the later done ones back
+  // A result depends on the events before it, so a late event sends the later done ones back
   // to the queue and the head claim redoes them in ts order. Cost: extra external calls, with no cap; the
   // api's 7-day ts window bounds one reprocess.
   // Safe without a transaction: we hold the patient's lock, and if a crash cuts the updateMany short,
@@ -215,7 +215,7 @@ export class ProcessingService implements OnModuleInit {
         // attempts restart at 0: a reprocess is a new run and gets its full retries, not the ones its earlier
         // run spent. Cost: attempts counts only the current run, so the total external calls are not stored.
         $set: { status: 'pending', availableAt: new Date(), attempts: 0 },
-        // A1: each reprocess calls the external API with a new key (dedupKey:reprocessCount);
+        // Each reprocess calls the external API with a new key (dedupKey:reprocessCount);
         // in our Mongo the event stays 1 document.
         $inc: { reprocessCount: 1 },
       },

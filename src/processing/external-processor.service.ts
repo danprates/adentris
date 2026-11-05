@@ -18,7 +18,7 @@ export class ExternalProcessorService {
     private readonly config: ConfigType<typeof processingConfig>,
   ) {}
 
-  // A1: idempotencyKey = dedupKey:reprocessCount changes on every reprocess, and a real client
+  // idempotencyKey = dedupKey:reprocessCount changes on every reprocess, and a real client
   // sends it as the Idempotency-Key header. The API must treat a new key as "recompute and replace", not "add".
   async process(
     event: ExternalInput,
