@@ -2,7 +2,21 @@
 # Crashes one worker mid-load and reports when the restart policy brings it back.
 set -eu
 
-DELAY_S="${CHAOS_DELAY_S:-180}"
+# Halfway through the load (k6 DURATION, default 10m), so the crash always hits events in flight.
+half_duration_s() {
+  duration="${DURATION:-10m}"
+  amount="${duration%?}"
+  case "$amount" in '' | *[!0-9]*) amount=bad ;; esac
+  case "$amount:$duration" in
+    bad:*) ;;
+    *s) echo $((amount / 2)) && return ;;
+    *m) echo $((amount * 30)) && return ;;
+    *h) echo $((amount * 1800)) && return ;;
+  esac
+  echo "cannot read DURATION=$duration (use one unit: 90s, 1m, 2h) or set CHAOS_DELAY_S" >&2
+  return 1
+}
+DELAY_S="${CHAOS_DELAY_S:-$(half_duration_s)}"
 sleep "$DELAY_S"
 
 worker=$(docker compose ps -q worker | head -n 1)

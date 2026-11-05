@@ -93,7 +93,7 @@ services:
       worker:
         condition: service_started
 
-  # SIGKILLs one worker at minute 3 of the load; needs the Docker socket to reach the worker's process.
+  # SIGKILLs one worker halfway through the load; needs the Docker socket to reach the worker's process.
   chaos:
     image: docker:27.5.1-cli
     profiles: [load]
@@ -102,6 +102,7 @@ services:
       - .:/work
     working_dir: /work
     environment:
+      - DURATION
       - CHAOS_DELAY_S
     command: sh load/chaos.sh
     depends_on:
