@@ -126,7 +126,7 @@ To **reprocess** an event is to set a `done` event back to `pending`, so that it
 
 One dispatch loop per worker claims events. Each worker has 500 **slots** (`WORKER_CONCURRENCY`): at most 500 claimed events run at the same time.
 
-1. Read the busy patients, and a batch of up to 100 ready `pending` events of the other patients. The worker reuses both reads for 200 ms.
+1. Read the busy patients, and a batch of up to 100 ready `pending` events of the other patients.
 2. For each patient in the batch, read the head. Claim it only if it is `pending` and ready (`availableAt` has passed); a head in processing means the patient is busy, and the worker skips it. The per-patient lock rejects the claim when the patient is busy anyway: another worker claimed it first, or the head is a lower-`ts` event that arrived while the patient was busy.
 3. If the claimed event is late, reprocess the patient's `done` events with a higher `ts` (see [Order](#events-arrive-out-of-order-and-state-depends-on-their-sequence)).
 4. Call the external system with a 10 s timeout.
@@ -202,10 +202,6 @@ Workers scale by replicas: `docker compose up -d --scale worker=4`.
   - Cost: during a worker outage the queue grows, and it drains only at the spare capacity.
   - In theory, with every worker down for 10 min, the queue drains in about 1 min at 1,000 events/min (183 spare events/s). One patient drains at most 12 events/min.
 - **One dispatch loop and a counter, not 500 polling loops.** An empty queue costs 1 query/s per worker. Cost: claims run one at a time per worker, so more throughput needs more replicas. `src/processing/worker.service.ts`
-- **The claim reuses its two reads for 200 ms.** `src/processing/processing.service.ts`
-  - Why: read on every claim, the busy-patient list scanned ~850 index keys per claim, and the batch was ~75% of the index keys Mongo read. Measured at 10,000 events/min: Mongo's CPU fell from 114% to 69–77% with the first cache, and index keys read fell from 51,500/s to 12,600/s with the second.
-  - Order stays safe: every claim still reads the head, and the per-patient lock guards it.
-  - Cost: a patient that became free or ready can wait up to 200 ms, and a patient that another worker claimed meanwhile costs 1 wasted head lookup.
 
 ### Patient data is PHI
 

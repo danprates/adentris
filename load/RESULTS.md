@@ -51,6 +51,7 @@ Tuning between runs 3 and 4, one measured change at a time (3-min runs at 167 ev
 - The claim batch and head queries are covered by `{status, availableAt, patientId}` and `{patientId, status, ts, _id}`, and the batch reads only `patientId`. Documents read per claim: ~4,100 → ~1 (`explain` on 104k events).
 - The busy-patient list is cached for 200 ms. Mongo CPU: 114% → 69–77%.
 - The claim batch is reused for 200 ms. Index keys read: 51.5k/s → 12.6k/s, queries: 539/s → 325/s.
+- Later removed: at 1,000 events/min the two 200 ms caches saved only 2–3 points of Mongo CPU (typical 5–6% with them, 7–9% without, one 2-min run each, both PASS), so the claim reads both on every call again.
 - Checked with no change: every index is read (`$indexStats`); a head waiting for a retry costs ~1.4 extra 1-key head lookups per claim at 20% external failures.
 
 Stalls: run 4 had no 40–100 s stall, only bursts of 1–2 s (at most 55 POSTs ≥ 100 ms in one second). One burst measured with journal counters matched one slow journal `fsync` of ~500 ms on the VM disk (27 writes queued); checkpoints caused none. `j: true` stays, so these bursts are a cost of the environment. The long stalls of runs 2 and 3 matched a busy host: with the host load at 7–12, every container used about twice the CPU for the same work.
