@@ -9,6 +9,7 @@ import type { ConfigType } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Model } from 'mongoose';
+import { errorMessage } from '../common/errors';
 import { Event } from '../events/schemas/event.schema';
 import { processingConfig } from './processing.config';
 import { MAX_ATTEMPTS } from './retry-policy';
@@ -73,7 +74,7 @@ export class LeaseReaperService
       }
     } catch (err) {
       // Mongo down: the next tick tries again.
-      this.logger.error(`reap failed: ${(err as Error)?.message}`);
+      this.logger.error(`reap failed: ${errorMessage(err)}`);
     }
   }
 }

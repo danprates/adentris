@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
-import { Model, mongo, Types } from 'mongoose';
+import { Model, Types } from 'mongoose';
+import { errorMessage, isDuplicateKey } from '../common/errors';
 import { patientRef } from '../common/patient-ref';
 import { Event } from '../events/schemas/event.schema';
 import { ExternalProcessorService } from './external-processor.service';
@@ -11,10 +12,6 @@ import { isExhausted, nextAttemptAt } from './retry-policy';
 
 export type ClaimedEvent = Event & { _id: Types.ObjectId };
 
-const DUPLICATE_KEY = 11000;
-
-const errorMessage = (err: unknown) =>
-  err instanceof Error ? err.message : String(err);
 // Ready events read per claim; enough distinct patients to find a free one.
 const CLAIM_BATCH = 100;
 
@@ -101,11 +98,7 @@ export class ProcessingService implements OnModuleInit {
         }
       } catch (err) {
         // 11000: the patient already has an event in processing.
-        if (!(
-          err instanceof mongo.MongoServerError && err.code === DUPLICATE_KEY
-        )) {
-          throw err;
-        }
+        if (!isDuplicateKey(err)) throw err;
       }
     }
     return null;

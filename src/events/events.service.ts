@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, mongo } from 'mongoose';
+import { isDuplicateKey } from '../common/errors';
 import { CreateEventDto } from './dto/create-event.dto';
 import { dedupKey } from './dedup-key';
 import { Event, EventStatus } from './schemas/event.schema';
@@ -15,7 +16,6 @@ export interface CreateEventResult {
   duplicate: boolean;
 }
 
-const DUPLICATE_KEY = 11000;
 const REQUEST_TIMEOUT_MS = 2000;
 
 @Injectable()
@@ -67,11 +67,7 @@ export class EventsService implements OnModuleInit {
       };
     } catch (err) {
       // A duplicate is also the retry of a sender whose 202 was lost when the api died after the insert.
-      if (!(
-        err instanceof mongo.MongoServerError && err.code === DUPLICATE_KEY
-      )) {
-        throw err;
-      }
+      if (!isDuplicateKey(err)) throw err;
     }
     // A resent failed event stays failed and is not queued again; operations requeue it on purpose.
     const original = await this.events

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { Observable, catchError, tap, throwError } from 'rxjs';
+import { errorMessage } from './errors';
 import { patientRef } from './patient-ref';
 
 // Handlers add their own fields here; the response body stays the API contract, not a log feed.
@@ -51,7 +52,7 @@ export class WideEventInterceptor implements NestInterceptor {
           ...base,
           status: http ? err.getStatus() : 500,
           durationMs: durationMs(),
-          error: errorMessage(err),
+          error: logMessage(err),
           stack: http ? undefined : (err as Error)?.stack,
         });
         // Nest's exception filter logs unknown errors again; an HttpException keeps it to this one line.
@@ -63,7 +64,7 @@ export class WideEventInterceptor implements NestInterceptor {
   }
 }
 
-function errorMessage(err: unknown): string {
+function logMessage(err: unknown): string {
   if (err instanceof HttpException) {
     const res = err.getResponse();
     const message =
@@ -72,5 +73,5 @@ function errorMessage(err: unknown): string {
     // Some responses carry no message (terminus puts the check results in the body).
     return typeof message === 'string' ? message : err.message;
   }
-  return err instanceof Error ? err.message : String(err);
+  return errorMessage(err);
 }

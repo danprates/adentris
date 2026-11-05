@@ -6,6 +6,7 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 import type { ConfigType } from '@nestjs/config';
+import { errorMessage } from '../common/errors';
 import { processingConfig } from './processing.config';
 import { ClaimedEvent, ProcessingService } from './processing.service';
 
@@ -63,7 +64,7 @@ export class WorkerService
           }
         } catch (err) {
           // Mongo down: log, wait and try again; the process stays up.
-          this.logger.error(`claim failed: ${(err as Error)?.message}`);
+          this.logger.error(`claim failed: ${errorMessage(err)}`);
         }
       }
       await this.waitForWork();
@@ -74,7 +75,7 @@ export class WorkerService
     const task: Promise<void> = this.processing
       .handle(event)
       .catch((err: unknown) =>
-        this.logger.error(`handle failed: ${(err as Error)?.message}`),
+        this.logger.error(`handle failed: ${errorMessage(err)}`),
       )
       .finally(() => {
         this.inFlight.delete(task);
