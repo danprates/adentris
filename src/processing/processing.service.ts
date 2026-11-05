@@ -65,6 +65,8 @@ export class ProcessingService implements OnModuleInit {
           { patientId, status: { $in: ['pending', 'processing'] } },
           { status: 1, availableAt: 1 },
         )
+        // _id breaks a ts tie in insert order for one api; across api replicas the ObjectIds come from
+        // different processes, so the tie order is arbitrary. Cost: equal-ts events of a patient may swap.
         .sort({ ts: 1, _id: 1 })
         .lean();
       if (!head || head.status !== 'pending' || head.availableAt > now) {
