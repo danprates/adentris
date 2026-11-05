@@ -12,6 +12,9 @@ async function bootstrap() {
     { bufferLogs: true },
   );
   setupApp(app);
+  // SIGTERM closes Fastify, which stops taking connections and lets in-flight requests finish.
+  // Node as PID 1 ignores SIGTERM without a handler, so without this Docker waits and sends SIGKILL.
+  app.enableShutdownHooks();
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 void bootstrap();
