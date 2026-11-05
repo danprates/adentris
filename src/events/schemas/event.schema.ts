@@ -64,7 +64,7 @@ export const EventSchema = SchemaFactory.createForClass(Event);
 
 EventSchema.index({ dedupKey: 1 }, { unique: true });
 // The database guarantees one event per patient in processing.
-// Cost: at most 12 events/min per patient (5s each), across all types.
+// Cost: at most 12 events/min per patient (5s each), across all types; a faster sender's queue never drains.
 EventSchema.index(
   { patientId: 1 },
   { unique: true, partialFilterExpression: { status: 'processing' } },

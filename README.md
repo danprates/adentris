@@ -155,7 +155,7 @@ Each decision below names the trade-off it accepts ("Cost:") and has a matching 
 
 ### Events arrive out of order, and state depends on their sequence
 
-- **One event per patient at a time, head first.** The per-patient lock lets Mongo refuse a second event of one patient in processing, and a worker claims only the patient's head. Later events wait while the head runs or waits for a retry, so an event that arrives out of order while the patient is busy still runs in `ts` order. Cost: one patient gets at most 12 events/min (5 s each), across all types. `src/events/schemas/event.schema.ts`, `src/processing/processing.service.ts`
+- **One event per patient at a time, head first.** The per-patient lock lets Mongo refuse a second event of one patient in processing, and a worker claims only the patient's head. Later events wait while the head runs or waits for a retry, so an event that arrives out of order while the patient is busy still runs in `ts` order. Cost: one patient gets at most 12 events/min (5 s each), across all types. A monitoring device that sends more (1 per second is 60/min) builds a queue for that patient that never drains, and nothing alerts on it. `src/events/schemas/event.schema.ts`, `src/processing/processing.service.ts`
 - **The claim checks `availableAt` again when it writes.** Another worker can fail the head between the head lookup and the claim write, and the retry must wait out its backoff. Cost: an event that turns ready during a claim waits for the next loop. `src/processing/processing.service.ts`
 - **A patient whose head waits for a retry stays out of the claim batch, like a busy one.** Otherwise its queued events, the oldest ready ones, fill the batch of 100, and every worker idles until the retry. Cost: a late event that arrives during the retry wait waits for it too. `src/processing/processing.service.ts`
 - **We trust the sender's clock.** Order is by `ts`, not by arrival. Cost: a sender whose clock runs ahead puts its events in the wrong order, and we do not detect it. `src/events/dto/create-event.dto.ts`
@@ -257,6 +257,7 @@ The worker treats it as a late event: it reprocesses the patient's `done` events
 - **Autoscaling of workers** on the age of the oldest pending event, so a backlog drains faster than the spare capacity allows.
 - **A history of results per reprocess.** Today a reprocess overwrites `result`, and `attempts` counts only the current processing run.
 - **An optional `Idempotency-Key` header from the sender**, used as the dedup key when present, so a resend with a changed field counts once.
+- **An alert on a patient's queue**, for a sender above 12 events/min. The fix depends on what the state means: a lock per patient and type, or one external call for a batch of a patient's events.
 - **A cap or an alert on large reprocesses**, for example when one late event sends more than 100 events back.
 - **A check on the sender's clock**, for example a flag on events whose `ts` is ahead of `receivedAt`.
 - **An archiving policy.** Clinical data is not deleted, and 1,000 events/min is 1.44 million documents per day.
