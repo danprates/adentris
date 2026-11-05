@@ -15,6 +15,7 @@ import {
   eventsCollection,
   waitFor,
   WorkerOptions,
+  DAY,
 } from './helpers';
 
 // Short backoff (20ms, 40ms, 80ms, 160ms) and reaper period, so 5 attempts fit in a test.
@@ -65,7 +66,7 @@ describe('Failure handling (e2e)', () => {
       patientId: 'p-1',
       type: 'vitals',
       data: { name: 'E1' },
-      ts: new Date('2026-11-03T10:00:00Z'),
+      ts: new Date(`${DAY}T10:00:00Z`),
       receivedAt: now,
       availableAt: now,
       status: 'pending',
@@ -151,7 +152,7 @@ describe('Failure handling (e2e)', () => {
     await insert({ data: { name: 'E1' } });
     await insert({
       data: { name: 'E2' },
-      ts: new Date('2026-11-03T10:05:00Z'),
+      ts: new Date(`${DAY}T10:05:00Z`),
     });
     await startWorker({ external, env: FAST });
 
@@ -165,7 +166,7 @@ describe('Failure handling (e2e)', () => {
     await insert({ data: { name: 'E1' } });
     await insert({
       data: { name: 'E2' },
-      ts: new Date('2026-11-03T10:05:00Z'),
+      ts: new Date(`${DAY}T10:05:00Z`),
     });
     await startWorker({ external, env: FAST });
 
@@ -430,7 +431,7 @@ describe('Failure handling (e2e)', () => {
       patientId: 'p-1',
       type: 'vitals',
       data: { hr: 72 },
-      ts: '2026-11-03T10:00:00Z',
+      ts: `${DAY}T10:00:00Z`,
     };
     await request(api.getHttpServer()).post('/events').send(event).expect(202);
     await events().updateMany({}, { $set: { status: 'failed', attempts: 5 } });

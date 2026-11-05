@@ -13,6 +13,7 @@ import {
   eventsCollection,
   waitFor,
   WorkerOptions,
+  DAY,
 } from './helpers';
 
 interface Call {
@@ -117,7 +118,7 @@ describe('Event processing (e2e)', () => {
         patientId: 'p-1',
         type: 'vitals',
         data: { hr: 72 },
-        ts: '2026-11-03T08:00:00Z',
+        ts: `${DAY}T08:00:00Z`,
       })
       .expect(202);
 
@@ -136,9 +137,7 @@ describe('Event processing (e2e)', () => {
 
   it('2.2 sends dedupKey:0 as the idempotency key', async () => {
     const spy = new ExternalSpy();
-    const [doc] = await seed([
-      { patientId: 'p-1', ts: '2026-11-03T08:00:00Z' },
-    ]);
+    const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
     await startWorker({ external: spy });
 
     await waitFor(() => allDone(1));
@@ -154,7 +153,7 @@ describe('Event processing (e2e)', () => {
     await seed(
       minutes.map((m) => ({
         patientId: 'p-1',
-        ts: `2026-11-03T08:0${m}:00Z`,
+        ts: `${DAY}T08:0${m}:00Z`,
       })),
     );
     await startWorker({ external: spy });
@@ -162,13 +161,13 @@ describe('Event processing (e2e)', () => {
     await waitFor(() => allDone(5));
 
     expect(spy.calls.map((c) => c.ts.toISOString())).toEqual(
-      [0, 1, 2, 3, 4].map((m) => `2026-11-03T08:0${m}:00.000Z`),
+      [0, 1, 2, 3, 4].map((m) => `${DAY}T08:0${m}:00.000Z`),
     );
   });
 
   it('2.4 breaks a ts tie by _id, one at a time', async () => {
     const spy = new ExternalSpy(50);
-    const ts = '2026-11-03T08:00:00Z';
+    const ts = `${DAY}T08:00:00Z`;
     await seed([
       { patientId: 'p-1', ts, data: { order: 'first' } },
       { patientId: 'p-1', ts, data: { order: 'second' } },
@@ -205,7 +204,7 @@ describe('Event processing (e2e)', () => {
     await seed(
       Array.from({ length: 10 }, (_, i) => ({
         patientId: `p-${i}`,
-        ts: '2026-11-03T08:00:00Z',
+        ts: `${DAY}T08:00:00Z`,
       })),
     );
     await startWorker({
@@ -245,7 +244,7 @@ describe('Event processing (e2e)', () => {
     }));
     const [head] = await seed([
       ...busy,
-      { patientId: 'p-2', ts: '2026-11-03T09:00:00Z' },
+      { patientId: 'p-2', ts: `${DAY}T09:00:00Z` },
     ]);
     // p-1 is busy in another worker, without a lease this worker could reap.
     await events().updateOne(
@@ -263,9 +262,7 @@ describe('Event processing (e2e)', () => {
     const spy = new ExternalSpy();
     let release!: () => void;
     spy.wait = () => new Promise((resolve) => (release = resolve));
-    const [doc] = await seed([
-      { patientId: 'p-1', ts: '2026-11-03T08:00:00Z' },
-    ]);
+    const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
     const worker = await startWorker({ external: spy });
     await waitFor(() => spy.calls.length === 1);
 
@@ -305,9 +302,7 @@ describe('Event processing (e2e)', () => {
 
   it('2.10 finishes the in-flight event before closing', async () => {
     const spy = new ExternalSpy(500);
-    const [doc] = await seed([
-      { patientId: 'p-1', ts: '2026-11-03T08:00:00Z' },
-    ]);
+    const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
     const worker = await startWorker({ external: spy });
     await waitFor(() => spy.calls.length === 1);
 
@@ -346,8 +341,8 @@ describe('Event processing (e2e)', () => {
     })) as unknown as typeof findOneAndUpdate);
 
     await seed([
-      { patientId: 'p-1', ts: '2026-11-03T08:00:00Z', data: { name: 'H1' } },
-      { patientId: 'p-1', ts: '2026-11-03T08:01:00Z', data: { name: 'H2' } },
+      { patientId: 'p-1', ts: `${DAY}T08:00:00Z`, data: { name: 'H1' } },
+      { patientId: 'p-1', ts: `${DAY}T08:01:00Z`, data: { name: 'H2' } },
     ]);
     await waitFor(() => allDone(2));
 
@@ -357,9 +352,7 @@ describe('Event processing (e2e)', () => {
   it('2.11 logs one wide event per processed event', async () => {
     const logs = captureLogs();
     try {
-      const [doc] = await seed([
-        { patientId: 'p-1', ts: '2026-11-03T08:00:00Z' },
-      ]);
+      const [doc] = await seed([{ patientId: 'p-1', ts: `${DAY}T08:00:00Z` }]);
       const worker = await startWorker({ external: new ExternalSpy() });
       await waitFor(() => allDone(1));
       await worker.close();

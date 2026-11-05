@@ -54,7 +54,7 @@ None of these are needed to check the service.
 
   ```bash
   curl -i localhost:3000/events -H 'content-type: application/json' \
-    -d '{"patientId":"p-1","type":"heart_rate","data":{"bpm":72},"ts":"2026-11-04T10:00:00Z"}'
+    -d '{"patientId":"p-1","type":"heart_rate","data":{"bpm":72},"ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'"}'
   ```
 
 - **Unit and e2e tests.** They need Node 26 (see `.nvmrc`) and the stack running (`docker compose up -d --build`):
@@ -157,6 +157,7 @@ C1, A1, B1 and Option C are labels from the list of options we compared for each
 
 - **One event per patient at a time, head first.** The per-patient lock lets Mongo refuse a second event of one patient in processing, and a worker claims only the patient's head. Later events wait while the head runs or waits for a retry, so an event that arrives out of order while the patient is busy still runs in `ts` order. Cost: one patient gets at most 12 events/min (5 s each), across all types. `src/events/schemas/event.schema.ts`, `src/processing/processing.service.ts`
 - **C1: we trust the sender's clock.** Order is by `ts`, not by arrival. Cost: a sender whose clock runs ahead puts its events in the wrong order, and we do not detect it. `src/events/dto/create-event.dto.ts`
+- **`ts` must fall between 7 days ago and 5 minutes ahead.** A `ts` in the future would make every later event of the patient late, and each would reprocess it; a very old `ts` would reprocess the patient's whole history. The api answers `400` outside the window. Cost: a sender offline for more than 7 days cannot deliver its backlog. `src/events/dto/create-event.dto.ts`
 - **Option C: a late event reprocesses the later ones.** The worker reprocesses the patient's `done` events with a higher `ts`, and they run in `ts` order after the late event. `src/processing/processing.service.ts`
   - Why: each result depends on the events before it, so a result computed without the late event is wrong.
   - An equal `ts` is not late, and a new event with a higher `ts` reprocesses nothing.

@@ -8,6 +8,7 @@ import {
   clearEvents,
   createApi,
   eventsCollection,
+  DAY,
 } from './helpers';
 
 interface ResponseBody {
@@ -21,7 +22,7 @@ const validEvent = () => ({
   patientId: 'p-1',
   type: 'vitals',
   data: { hr: 72, bp: { sys: 120, dia: 80 } },
-  ts: '2026-11-03T08:00:00Z',
+  ts: `${DAY}T08:00:00Z`,
 });
 
 describe('POST /events (e2e)', () => {
@@ -98,7 +99,7 @@ describe('POST /events (e2e)', () => {
 
     const second = await post({
       ...validEvent(),
-      ts: '2026-11-03T08:00:01Z',
+      ts: `${DAY}T08:00:01Z`,
     }).expect(202);
 
     expect(bodyOf(second).id).not.toBe(bodyOf(first).id);
@@ -121,7 +122,11 @@ describe('POST /events (e2e)', () => {
   it.each<[string, Record<string, unknown>]>([
     ['empty patientId', { patientId: '' }],
     ['ts that is not a date', { ts: 'ontem' }],
-    ['ts without a timezone offset', { ts: '2026-11-03T08:00:00' }],
+    ['ts without a timezone offset', { ts: `${DAY}T08:00:00` }],
+    ['ts more than 5 minutes ahead', { ts: '9999-12-31T00:00:00Z' }],
+    ['ts more than 7 days old', { ts: '1900-01-01T00:00:00Z' }],
+    ['patientId over 128 characters', { patientId: 'p'.repeat(129) }],
+    ['type over 64 characters', { type: 't'.repeat(65) }],
     ['data as a string', { data: 'texto' }],
     ['data as an array', { data: [1, 2] }],
   ])('1.7 rejects %s', async (_case, change) => {
@@ -237,13 +242,13 @@ describe('POST /events (e2e)', () => {
   it('1.15 stores ts as a UTC Date', async () => {
     const res = await post({
       ...validEvent(),
-      ts: '2026-11-03T10:00:00+02:00',
+      ts: `${DAY}T10:00:00+02:00`,
     }).expect(202);
 
     const doc = await eventsCollection(app).findOne({
       _id: new Types.ObjectId(bodyOf(res).id),
     });
-    expect(doc?.ts).toEqual(new Date('2026-11-03T08:00:00Z'));
+    expect(doc?.ts).toEqual(new Date(`${DAY}T08:00:00Z`));
   });
 
   it('1.16 treats the same instant in another offset as a duplicate', async () => {
@@ -251,7 +256,7 @@ describe('POST /events (e2e)', () => {
 
     const second = await post({
       ...validEvent(),
-      ts: '2026-11-03T10:00:00+02:00',
+      ts: `${DAY}T10:00:00+02:00`,
     }).expect(200);
 
     expect(bodyOf(second).id).toBe(bodyOf(first).id);

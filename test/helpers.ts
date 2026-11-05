@@ -8,6 +8,11 @@ import { createAdapter, setupApp } from '../src/app.setup';
 import { ExternalProcessorService } from '../src/processing/external-processor.service';
 import { WorkerModule } from '../src/worker.module';
 
+// Yesterday's date: a fixed day would leave the api's 7-day ts window and turn every post into 400.
+export const DAY = new Date(Date.now() - 24 * 60 * 60_000)
+  .toISOString()
+  .slice(0, 10);
+
 export async function createApi(): Promise<NestFastifyApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [AppModule],
