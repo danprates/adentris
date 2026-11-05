@@ -12,6 +12,8 @@ import { isExhausted, nextAttemptAt } from './retry-policy';
 
 export type ClaimedEvent = Event & { _id: Types.ObjectId };
 
+type Outcome = 'done' | 'retry' | 'failed' | 'lease_lost';
+
 // Ready events read per claim; enough distinct patients to find a free one.
 const CLAIM_BATCH = 100;
 
@@ -115,46 +117,41 @@ export class ProcessingService implements OnModuleInit {
       patientRef: patientRef(event.patientId),
       attempt: event.attempts,
     };
-    // A failed write leaves the event in processing until its lease expires; the reaper counts it as an attempt.
-    const writeFailed = (err: unknown) => {
-      wideEvent.writeError = errorMessage(err);
-      return 'write_failed';
-    };
     try {
-      let reprocessed: number;
-      try {
-        reprocessed = await this.resetLater(event);
-      } catch (err) {
-        wideEvent.outcome = writeFailed(err);
-        return;
-      }
-      if (reprocessed > 0) {
-        wideEvent.late = true;
-        wideEvent.reprocessed = reprocessed;
-      }
-      const start = performance.now();
-      let result: Record<string, unknown>;
-      try {
-        result = await this.callExternal(event);
-      } catch (err) {
-        // Only an external error goes to the retry policy; a failed write below does not.
-        wideEvent.externalMs = Math.round(performance.now() - start);
-        const error = errorMessage(err);
-        wideEvent.error = error;
-        wideEvent.outcome = await this.fail(event, error).then(
-          (outcome) => outcome ?? 'lease_lost',
-          writeFailed,
-        );
-        return;
-      }
-      wideEvent.externalMs = Math.round(performance.now() - start);
-      wideEvent.outcome = await this.complete(event, result).then(
-        (done) => (done ? 'done' : 'lease_lost'),
-        writeFailed,
-      );
+      wideEvent.outcome = await this.run(event, wideEvent);
+    } catch (err) {
+      // A failed write leaves the event in processing until its lease expires; the reaper counts it as an attempt.
+      wideEvent.outcome = 'write_failed';
+      wideEvent.writeError = errorMessage(err);
     } finally {
       this.logger.log(wideEvent);
     }
+  }
+
+  // Reset the later events, call the external API, store the outcome. A Mongo write throws to handle();
+  // only an external error goes to the retry policy.
+  private async run(
+    event: ClaimedEvent,
+    wideEvent: Record<string, unknown>,
+  ): Promise<Outcome> {
+    const reprocessed = await this.resetLater(event);
+    if (reprocessed > 0) {
+      wideEvent.late = true;
+      wideEvent.reprocessed = reprocessed;
+    }
+
+    const start = performance.now();
+    const call = await this.callExternal(event).then(
+      (result) => ({ ok: true as const, result }),
+      (err: unknown) => ({ ok: false as const, error: errorMessage(err) }),
+    );
+    wideEvent.externalMs = Math.round(performance.now() - start);
+
+    if (!call.ok) {
+      wideEvent.error = call.error;
+      return (await this.fail(event, call.error)) ?? 'lease_lost';
+    }
+    return (await this.complete(event, call.result)) ? 'done' : 'lease_lost';
   }
 
   // A result depends on the events before it, so a late event sends the later done ones back to the queue.
